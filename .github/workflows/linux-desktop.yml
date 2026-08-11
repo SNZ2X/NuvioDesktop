@@ -58,19 +58,19 @@ jobs:
           echo "== deb artifact: ${DEB} =="
           dpkg-deb -I "${DEB}" | tee /tmp/deb-info.txt
           echo "== Depends =="
-          grep -E '^Depends:' /tmp/deb-info.txt || echo "Depends: (none)"
+          grep -E '^ *Depends:' /tmp/deb-info.txt || echo "Depends: (none)"
           WORK="$(mktemp -d)"
           trap 'rm -rf "${WORK}"' EXIT
           cd "${WORK}"
           ar x "${GITHUB_WORKSPACE}/${DEB}"
-          DATA="$(ls data.tar.* 2>/dev/null | head -n1)"
+          DATA="$(find . -maxdepth 1 -name 'data.tar.*' -print -quit)"
           test -n "${DATA}" || { echo "error: no data.tar.* in deb" >&2; exit 1; }
           tar xf "${DATA}"
           echo "== app image top-level =="
           find opt -maxdepth 2 | sort | head -n20
-          LAUNCHER="$(find opt -path '*/bin/*' -type f | head -n1)"
+          LAUNCHER="$(find opt -path '*/bin/*' -type f -print -quit)"
           echo "== launcher: ${LAUNCHER} =="
-          JAR="$(find opt -path '*/lib/app/*.jar' -type f | head -n1)"
+          JAR="$(find opt -path '*/lib/app/composeApp-desktop-*.jar' -type f -print -quit)"
           test -n "${JAR}" || { echo "error: app jar not found under opt/" >&2; exit 1; }
           echo "== app jar: ${JAR} =="
           unzip -l "${JAR}" | tee /tmp/jar-list.txt
