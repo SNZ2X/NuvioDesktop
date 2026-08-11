@@ -18,14 +18,13 @@ depends=('mpv' 'glibc' 'gcc-libs' 'libstdc++' 'libx11' 'libxext' 'libxrender' 'l
 
 # jpackage deb naming: <lowercase-packageName>_<packageVersion>_<arch>.deb
 # packageName "Nuvio" + packageVersion "1.1.19" (jpackageCompatibleVersion of
-# DesktopVersion.properties VERSION_NAME=0.1.19-alpha) -> nuvio_1.1.19_amd64.deb
-# (confirmed against the CI run's SHA256SUMS.txt).
-# TEMP(local install): local deb while the CI rebuild with the real Supabase
-# config is in flight; will revert to the release URL + its sha.
-source=("nuvio_1.1.19_amd64.deb")
+# DesktopVersion.properties VERSION_NAME=0.1.19-alpha) -> nuvio_1.1.19_amd64.deb.
+# Built by the fork's GitHub Actions workflow (linux-desktop.yml) with the
+# public Supabase client config, attached to release v0.1.19-alpha.
+source=("https://github.com/SNZ2X/NuvioDesktop/releases/download/v0.1.19-alpha/nuvio_1.1.19_amd64.deb")
 
-# sha256sum of the locally built deb (real Supabase config).
-sha256sums=('640a237b343eb6620fc2dc953f1c073340011ef96430374fa70bec5f5275e3de')
+# sha256sum from the CI-produced SHA256SUMS.txt (run 31523895867).
+sha256sums=('623eee1ccc8941847ceea54b122d86db7ef60c9558413dff4e5a181a16864429')
 
 package() {
   cd "${srcdir}"
