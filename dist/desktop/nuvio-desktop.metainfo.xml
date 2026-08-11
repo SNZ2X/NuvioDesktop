@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.nuvio.media.desktop</id>
+  <name>Nuvio Desktop</name>
+  <summary>Stream movies, TV shows and live channels from your addons</summary>
+  <description>
+    <p>Nuvio Desktop is a cross-platform media player that streams movies, TV shows and live channels from addon catalogs. This Linux build is produced by the SNZ2X/NuvioDesktop GitHub Actions workflow.</p>
+  </description>
+  <url type="homepage">https://github.com/SNZ2X/NuvioDesktop</url>
+  <project_license>GPL-3.0</project_license>
+  <launchable type="desktop-id">nuvio-desktop.desktop</launchable>
+</component>
+

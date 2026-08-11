@@ -1,0 +1,108 @@
+name: Linux Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [linux-port]
+    tags: ['v*']
+
+# Needed so the tag-push release job can create the GitHub Release.
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # The Linux build needs no LFS objects; leave the pointers as-is.
+          lfs: false
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # TorrServer's server/go.mod (MatriX.142.2) requires go >= 1.25.7.
+          go-version: '1.25.x'
+
+      - name: Install fakeroot (jpackage deb requirement)
+        run: sudo apt-get update && sudo apt-get install -y fakeroot
+
+      - name: Build bundled TorrServer (GOAMD64=v1)
+        run: bash dist/fetch-torrserver.sh
+
+      - name: Build Debian package
+        run: ./gradlew :composeApp:packageReleaseDeb -Pcompose.desktop.packaging.checkJdkVendor=false -Dorg.gradle.jvmargs="-Xmx6G -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8" -Dkotlin.daemon.jvmargs=-Xmx4G --no-configuration-cache --no-daemon --stacktrace
+
+      - name: Verify Debian package
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEB_DIR="composeApp/build/compose/binaries/main-release/deb"
+          DEB="$(ls "${DEB_DIR}"/*.deb 2>/dev/null | head -n1)"
+          test -n "${DEB}" || { echo "error: no .deb found in ${DEB_DIR}" >&2; exit 1; }
+          echo "== deb artifact: ${DEB} =="
+          dpkg-deb -I "${DEB}" | tee /tmp/deb-info.txt
+          echo "== Depends =="
+          grep -E '^Depends:' /tmp/deb-info.txt || echo "Depends: (none)"
+          WORK="$(mktemp -d)"
+          trap 'rm -rf "${WORK}"' EXIT
+          cd "${WORK}"
+          ar x "${GITHUB_WORKSPACE}/${DEB}"
+          DATA="$(ls data.tar.* 2>/dev/null | head -n1)"
+          test -n "${DATA}" || { echo "error: no data.tar.* in deb" >&2; exit 1; }
+          tar xf "${DATA}"
+          echo "== app image top-level =="
+          find opt -maxdepth 2 | sort | head -n20
+          LAUNCHER="$(find opt -path '*/bin/*' -type f | head -n1)"
+          echo "== launcher: ${LAUNCHER} =="
+          JAR="$(find opt -path '*/lib/app/*.jar' -type f | head -n1)"
+          test -n "${JAR}" || { echo "error: app jar not found under opt/" >&2; exit 1; }
+          echo "== app jar: ${JAR} =="
+          unzip -l "${JAR}" | tee /tmp/jar-list.txt
+          grep -q 'native/linux/libplayer_bridge\.so' /tmp/jar-list.txt || { echo "error: libplayer_bridge.so missing from jar" >&2; exit 1; }
+          grep -q 'torrserver/linux-amd64/TorrServer' /tmp/jar-list.txt || { echo "error: TorrServer missing from jar" >&2; exit 1; }
+          echo "OK: jar contains native/linux/libplayer_bridge.so and torrserver/linux-amd64/TorrServer"
+          mkdir -p jarx
+          unzip -o -q "${JAR}" torrserver/linux-amd64/TorrServer -d jarx
+          if test -x jarx/torrserver/linux-amd64/TorrServer; then
+            echo "OK: TorrServer is executable inside the jar"
+          else
+            echo "WARNING: TorrServer not executable inside the jar (runtime must chmod it)"
+          fi
+          cd "${GITHUB_WORKSPACE}"
+          (cd "${DEB_DIR}" && sha256sum ./*.deb > SHA256SUMS.txt)
+          echo "== SHA256SUMS.txt =="
+          cat "${DEB_DIR}/SHA256SUMS.txt"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuvio-desktop-linux-x64
+          path: |
+            composeApp/build/compose/binaries/main-release/deb/*.deb
+            composeApp/build/compose/binaries/main-release/deb/SHA256SUMS.txt
+          if-no-files-found: error
+
+  release:
+    needs: build-linux
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nuvio-desktop-linux-x64
+          path: nuvio-desktop-linux-x64
+
+      - name: Attach deb to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: nuvio-desktop-linux-x64/*

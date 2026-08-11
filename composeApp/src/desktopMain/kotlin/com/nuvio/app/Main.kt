@@ -23,6 +23,7 @@ import com.nuvio.app.features.player.desktop.DesktopAppFullscreenController
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.DesktopWindowGeometry
 import com.nuvio.app.features.player.desktop.DesktopWindowModeStorage
+import com.nuvio.app.features.player.desktop.NativePlayerBridge
 import com.nuvio.app.features.player.desktop.applyNativeDesktopWindowChrome
 import com.nuvio.app.features.player.desktop.installDesktopAppFullscreenShortcuts
 import com.nuvio.app.features.player.desktop.preloadNativePlayerBridgeAsync
@@ -37,6 +38,12 @@ private const val NuvioDesktopIconPath = "icons/nuvio-app-icon.png"
 private const val MacosDarkAquaAppearance = "NSAppearanceNameDarkAqua"
 
 fun main(args: Array<String>) {
+    // Must run before any AWT toolkit access: the X11 WM non-reparenting hint
+    // keeps the AWT window intact under tiling WMs and XWayland. This also
+    // loads libplayer_bridge.so early (allowed on Linux).
+    if (DesktopHostOs.current == DesktopHostOs.LINUX) {
+        runCatching { NativePlayerBridge.setAwtNonReparenting() }
+    }
     applyDesktopRendererPreference()
     SentryInitializer.start()
     configureDesktopQuickJsLibrary()
@@ -201,3 +208,4 @@ private fun handleDesktopLaunchArgs(args: Array<String>) {
 private fun isDesktopAppUrl(value: String): Boolean =
     value.startsWith("nuvio://", ignoreCase = true) ||
         value.startsWith("stremio://", ignoreCase = true)
+

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Nuvio Desktop
+Exec=/opt/nuvio-desktop/bin/Nuvio %u
+Icon=nuvio-desktop
+Terminal=false
+Type=Application
+Categories=AudioVideo;Player;
+MimeType=x-scheme-handler/nuvio;x-scheme-handler/stremio;;
+StartupWMClass=Nuvio
+

@@ -7,6 +7,8 @@
 xcuserdata
 !src/**/build/
 local.properties
+# TorrServer is rebuilt from source in CI (dist/fetch-torrserver.sh); never commit the binary.
+composeApp/src/desktopMain/resources/torrserver/linux-amd64/
 .idea
 .DS_Store
 captures

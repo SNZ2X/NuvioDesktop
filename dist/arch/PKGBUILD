@@ -1,0 +1,65 @@
+# Maintainer: SNZ2X
+#
+# Bin-style package: repackages the Debian package produced by the fork's
+# GitHub Actions workflow (linux-desktop.yml) — no source build here.
+# The deb is built by jpackage in CI and published as a GitHub Release asset
+# tagged v<desktopReleaseVersionName> (e.g. v0.1.19-alpha).
+#
+# Run `makepkg -si` from this directory once the release exists.
+
+pkgname=nuvio-desktop
+pkgver=1.1.19
+pkgrel=1
+pkgdesc="Nuvio Desktop media player (Linux) — repackaged from the CI-built Debian package"
+arch=('x86_64')
+url="https://github.com/SNZ2X/NuvioDesktop"
+license=('GPL3')
+depends=('mpv' 'glibc' 'gcc-libs' 'libstdc++' 'libx11' 'libxext' 'libxrender' 'libxi' 'libxtst' 'mesa')
+
+# jpackage deb naming: <lowercase-packageName>_<packageVersion>_<arch>.deb
+# packageName "Nuvio" + packageVersion "1.1.19" (jpackageCompatibleVersion of
+# DesktopVersion.properties VERSION_NAME=0.1.19-alpha) -> nuvio_1.1.19_amd64.deb.
+# TODO(orchestrator): confirm the exact deb filename against the first CI run's
+# SHA256SUMS.txt before relying on this URL.
+source=("https://github.com/SNZ2X/NuvioDesktop/releases/download/v0.1.19-alpha/nuvio_1.1.19_amd64.deb")
+
+# TODO(orchestrator): fill in the sha256sum from the CI-produced SHA256SUMS.txt
+# after the first workflow run; empty means makepkg warns and skips the check.
+sha256sums=()
+
+package() {
+  cd "${srcdir}"
+  local deb="${source[0]##*/}"
+
+  # Unpack the jpackage deb (ar -> data.tar.*) directly into the package root.
+  ar x "${deb}"
+  local data_tar
+  data_tar="$(ls data.tar.* 2>/dev/null | head -n1)"
+  [[ -n "${data_tar}" ]] || { echo "error: no data.tar.* inside ${deb}" >&2; return 1; }
+  tar xf "${data_tar}" -C "${pkgdir}"
+
+  # jpackage installs the app image under /opt/nuvio (lowercased packageName);
+  # remap to /opt/nuvio-desktop. find-based so a non-lowercased payload dir
+  # (/opt/Nuvio) also works.
+  local payload_dir
+  payload_dir="$(find "${pkgdir}/opt" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+  [[ -n "${payload_dir}" ]] || { echo "error: no payload dir under ${pkgdir}/opt" >&2; return 1; }
+  mv "${payload_dir}" "${pkgdir}/opt/nuvio-desktop"
+
+  # Launcher symlink. The jpackage launcher is named after the packageName,
+  # expected "Nuvio".
+  # TODO(orchestrator): confirm the launcher name from the CI artifact.
+  install -d "${pkgdir}/usr/bin"
+  ln -s /opt/nuvio-desktop/bin/Nuvio "${pkgdir}/usr/bin/nuvio-desktop"
+
+  # Desktop entry, AppStream metadata and icons (copies of the app icon,
+  # resized by the orchestrator).
+  install -Dm644 "${startdir}/../desktop/nuvio-desktop.desktop" \
+    "${pkgdir}/usr/share/applications/nuvio-desktop.desktop"
+  install -Dm644 "${startdir}/../desktop/nuvio-desktop.metainfo.xml" \
+    "${pkgdir}/usr/share/metainfo/nuvio-desktop.metainfo.xml"
+  for size in 16 32 48 64 128 256 512; do
+    install -Dm644 "${startdir}/../desktop/icons/hicolor/${size}x${size}/apps/nuvio-desktop.png" \
+      "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/nuvio-desktop.png"
+  done
+}
