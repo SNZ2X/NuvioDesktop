@@ -35,6 +35,13 @@ jobs:
       - name: Install fakeroot (jpackage deb requirement)
         run: sudo apt-get update && sudo apt-get install -y fakeroot
 
+      - name: Create empty local.properties
+        # generateRuntimeConfigs declares local.properties as an @InputFile; an
+        # absent file fails Gradle's input validation. An empty file keeps all
+        # runtime configs (Supabase/Trakt/Sentry) at their empty-string defaults:
+        # no secrets are needed for this build.
+        run: touch local.properties
+
       - name: Build bundled TorrServer (GOAMD64=v1)
         run: bash dist/fetch-torrserver.sh
 
