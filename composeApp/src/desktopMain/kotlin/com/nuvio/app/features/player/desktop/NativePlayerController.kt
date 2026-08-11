@@ -423,6 +423,17 @@ internal class NativePlayerController(
         onEvent("cursorActivity", 0.0)
     }
 
+    /** Linux: routes an AWT keyboard shortcut through the same action path the
+     * native WebView controls (controls.js) use on mac/win — runtime handler
+     * first, native fallback if the runtime defers. */
+    fun dispatchPlayerAction(action: PlayerControlsAction) {
+        val actionHandled = onAction(action)
+        log.d { "keyboard action=$action handled=$actionHandled handle=$handle" }
+        if (!actionHandled) {
+            handleFallbackAction(action)
+        }
+    }
+
     fun dispose() {
         host.resetCursorVisibility()
         disposePlayerHandle()

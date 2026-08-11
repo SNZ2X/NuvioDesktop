@@ -9,6 +9,11 @@ xcuserdata
 local.properties
 # TorrServer is rebuilt from source in CI (dist/fetch-torrserver.sh); never commit the binary.
 composeApp/src/desktopMain/resources/torrserver/linux-amd64/
+# makepkg build outputs in dist/arch (deb, package, extracted trees)
+dist/arch/src/
+dist/arch/pkg/
+dist/arch/*.pkg.tar.*
+dist/arch/*.deb
 .idea
 .DS_Store
 captures

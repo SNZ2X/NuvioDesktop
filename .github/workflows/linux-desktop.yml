@@ -35,12 +35,28 @@ jobs:
       - name: Install fakeroot (jpackage deb requirement)
         run: sudo apt-get update && sudo apt-get install -y fakeroot
 
-      - name: Create empty local.properties
+      - name: Create local.properties
         # generateRuntimeConfigs declares local.properties as an @InputFile; an
-        # absent file fails Gradle's input validation. An empty file keeps all
-        # runtime configs (Supabase/Trakt/Sentry) at their empty-string defaults:
-        # no secrets are needed for this build.
-        run: touch local.properties
+        # absent file fails Gradle's input validation. The Supabase URL/anon key
+        # are public client keys (embedded in every official Nuvio build) and are
+        # stored as repository Actions variables so accounts/login work in the
+        # release build. If unset, configs fall back to empty strings (app still
+        # works as a local client; cloud accounts degrade).
+        run: |
+          touch local.properties
+          if [[ -n "${NUVIO_SUPABASE_URL:-}" ]]; then
+            printf 'NUVIO_SUPABASE_URL=%s\n' "$NUVIO_SUPABASE_URL" >> local.properties
+          fi
+          if [[ -n "${NUVIO_SUPABASE_ANON_KEY:-}" ]]; then
+            printf 'NUVIO_SUPABASE_ANON_KEY=%s\n' "$NUVIO_SUPABASE_ANON_KEY" >> local.properties
+          fi
+          if [[ -n "${NUVIO_SUPABASE_FALLBACK_URL:-}" ]]; then
+            printf 'NUVIO_SUPABASE_FALLBACK_URL=%s\n' "$NUVIO_SUPABASE_FALLBACK_URL" >> local.properties
+          fi
+        env:
+          NUVIO_SUPABASE_URL: ${{ vars.NUVIO_SUPABASE_URL }}
+          NUVIO_SUPABASE_ANON_KEY: ${{ vars.NUVIO_SUPABASE_ANON_KEY }}
+          NUVIO_SUPABASE_FALLBACK_URL: ${{ vars.NUVIO_SUPABASE_FALLBACK_URL }}
 
       - name: Build bundled TorrServer (GOAMD64=v1)
         run: bash dist/fetch-torrserver.sh

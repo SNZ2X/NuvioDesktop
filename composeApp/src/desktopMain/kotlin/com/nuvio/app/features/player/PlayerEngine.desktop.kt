@@ -369,6 +369,41 @@ private fun LinuxNativePlayerSurface(
         )
     }
 
+    // Linux has no WebView controls page (mac/win get these keys from
+    // controls.js), so mirror the same shortcut map with an AWT dispatcher.
+    DisposableEffect(controller) {
+        val dispatcher = java.awt.KeyEventDispatcher { event ->
+            if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return@KeyEventDispatcher false
+            val hasModifiers =
+                (event.modifiersEx and java.awt.event.KeyEvent.META_DOWN_MASK != 0) ||
+                    (event.modifiersEx and java.awt.event.KeyEvent.CTRL_DOWN_MASK != 0) ||
+                    (event.modifiersEx and java.awt.event.KeyEvent.ALT_DOWN_MASK != 0)
+            if (hasModifiers) return@KeyEventDispatcher false
+            // Don't steal typing in text fields (search, PIN entry, modals).
+            val focusOwner = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
+            if (focusOwner is javax.swing.text.JTextComponent) return@KeyEventDispatcher false
+            val action = when (event.keyCode) {
+                java.awt.event.KeyEvent.VK_SPACE,
+                java.awt.event.KeyEvent.VK_K -> PlayerControlsAction.KeyboardTogglePlayback
+                java.awt.event.KeyEvent.VK_LEFT,
+                java.awt.event.KeyEvent.VK_J -> PlayerControlsAction.KeyboardSeekBack
+                java.awt.event.KeyEvent.VK_RIGHT,
+                java.awt.event.KeyEvent.VK_L -> PlayerControlsAction.KeyboardSeekForward
+                java.awt.event.KeyEvent.VK_UP -> PlayerControlsAction.KeyboardVolumeUp
+                java.awt.event.KeyEvent.VK_DOWN -> PlayerControlsAction.KeyboardVolumeDown
+                else -> null
+            } ?: return@KeyEventDispatcher false
+            controller.dispatchPlayerAction(action)
+            true
+        }
+        java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
+            .addKeyEventDispatcher(dispatcher)
+        onDispose {
+            java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                .removeKeyEventDispatcher(dispatcher)
+        }
+    }
+
     DisposableEffect(controller, sourceUrl, playbackHeaders) {
         onDispose { controller.dispose() }
     }
@@ -493,12 +528,24 @@ private fun ComposeVideoSurface(
             val buffer = directBuffers[directIndex]
             directIndex = (directIndex + 1) % directBuffers.size
             buffer.rewind()
-            if (!controller.renderFrame(size.width, size.height, buffer)) continue
-            buffer.rewind()
             val pixels = pixelRows[rowIndex]
             val bitmap = bitmaps[rowIndex]
             rowIndex = (rowIndex + 1) % pixelRows.size
-            buffer.get(pixels, 0, needed)
+            /* The mpv render + readback is a blocking JNI round-trip (enqueue,
+             * wait for the render thread, glReadPixels). Run it off the UI
+             * thread: while the UI thread is parked on it, Compose can't
+             * process pointer events (controls never reveal on mouse move)
+             * and drops frames (stutter). The frameImage state write below
+             * stays on the UI thread. */
+            val hasFrame = withContext(Dispatchers.Default) {
+                if (!controller.renderFrame(size.width, size.height, buffer)) {
+                    return@withContext false
+                }
+                buffer.rewind()
+                buffer.get(pixels, 0, needed)
+                true
+            }
+            if (!hasFrame) continue
             if (bitmap.installPixels(
                     ImageInfo(size.width, size.height, ColorType.RGB_888X, ColorAlphaType.OPAQUE),
                     pixels,
