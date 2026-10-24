@@ -23,7 +23,9 @@ import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.Icon
@@ -120,6 +122,13 @@ internal fun PlayerControlActions(
     onStreamInfoClick: () -> Unit,
     onSubmitIntroClick: (() -> Unit)?,
     onInteraction: () -> Unit,
+    showRuntime: Boolean = true,
+    onPreviousChannel: (() -> Unit)? = null,
+    onNextChannel: (() -> Unit)? = null,
+    previousChannelLabel: String = "",
+    nextChannelLabel: String = "",
+    onRetry: (() -> Unit)? = null,
+    retryLabel: String = "",
 ) {
     val actions = listOfNotNull(
         onNextEpisodeClick?.let {
@@ -127,6 +136,15 @@ internal fun PlayerControlActions(
                 stringResource(Res.string.player_next_episode), it,
                 icon = Icons.Rounded.SkipNext, iconSize = 40.dp,
             )
+        },
+        onPreviousChannel?.let {
+            PlayerControlAction(previousChannelLabel, it, icon = Icons.Rounded.SkipPrevious)
+        },
+        onNextChannel?.let {
+            PlayerControlAction(nextChannelLabel, it, icon = Icons.Rounded.SkipNext)
+        },
+        onRetry?.let {
+            PlayerControlAction(retryLabel, it, icon = Icons.Rounded.Refresh)
         },
         PlayerControlAction(
             stringResource(Res.string.compose_player_subtitles), onSubtitleClick,
@@ -221,25 +239,27 @@ internal fun PlayerControlActions(
                     )
                 }
             }
-            Box(
-                modifier = Modifier.height(48.dp).widthIn(min = 48.dp).clickable(
-                    role = Role.Button,
-                    onClickLabel = stringResource(
-                        if (showRemainingTime) Res.string.compose_player_show_elapsed_time else Res.string.compose_player_show_remaining_time,
+            if (showRuntime) {
+                Box(
+                    modifier = Modifier.height(48.dp).widthIn(min = 48.dp).clickable(
+                        role = Role.Button,
+                        onClickLabel = stringResource(
+                            if (showRemainingTime) Res.string.compose_player_show_elapsed_time else Res.string.compose_player_show_remaining_time,
+                        ),
+                        onClick = {
+                            onRuntimeClick()
+                            onInteraction()
+                        },
                     ),
-                    onClick = {
-                        onRuntimeClick()
-                        onInteraction()
-                    },
-                ),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                Text(
-                    text = formatPlaybackRuntime(displayedPositionMs, playbackSnapshot.durationMs, showRemainingTime),
-                    style = MaterialTheme.nuvioTypeScale.bodyMd.copy(fontSize = (metrics.timeSize.value + 2).sp),
-                    color = Color.White.copy(alpha = 0.9f),
-                    maxLines = 1,
-                )
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    Text(
+                        text = formatPlaybackRuntime(displayedPositionMs, playbackSnapshot.durationMs, showRemainingTime),
+                        style = MaterialTheme.nuvioTypeScale.bodyMd.copy(fontSize = (metrics.timeSize.value + 2).sp),
+                        color = Color.White.copy(alpha = 0.9f),
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }

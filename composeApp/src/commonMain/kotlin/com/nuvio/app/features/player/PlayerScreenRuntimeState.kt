@@ -99,8 +99,11 @@ internal class PlayerScreenRuntime(
     val torrentTrackers: List<String> get() = args.torrentTrackers
     val initialPositionMs: Long get() = args.initialPositionMs
     val initialProgressFraction: Float? get() = args.initialProgressFraction
+    val isLive: Boolean get() = args.isLive
+    val onPreviousChannel: (() -> Unit)? get() = args.onPreviousChannel
+    val onNextChannel: (() -> Unit)? get() = args.onNextChannel
     var externalSubtitles by mutableStateOf(args.externalSubtitles)
-    val isSeries: Boolean get() = parentMetaType == "series"
+    val isSeries: Boolean get() = !isLive && parentMetaType == "series"
 
     lateinit var scope: CoroutineScope
     lateinit var hapticFeedback: HapticFeedback
@@ -131,6 +134,10 @@ internal class PlayerScreenRuntime(
     var airsPrefix: String = ""
     var tbaLabel: String = ""
     var genericUnknownLabel: String = ""
+    var liveBadgeLabel: String = "LIVE"
+    var previousChannelLabel: String = "Previous channel"
+    var nextChannelLabel: String = "Next channel"
+    var retryLabel: String = "Retry"
     var parentalGuideLabels: ParentalGuideLabels = ParentalGuideLabels("", "", "", "", "", "", "", "")
 
     var gestureController: PlayerGestureController? = null
@@ -181,6 +188,25 @@ internal class PlayerScreenRuntime(
     val playerReleaseSurfaceRetention = PlayerReleaseSurfaceRetention()
     var playerControllerSourceUrl by mutableStateOf<String?>(null)
     var errorMessage by mutableStateOf<String?>(null)
+    var livePlaybackErrorMessage by mutableStateOf("")
+    var liveReleaseErrorMessage by mutableStateOf("")
+    // A failed native release must retain its host; playback Retry cannot reuse this controller.
+    var liveReleaseFailed by mutableStateOf(false)
+    val liveChannelSwitcher = PlayerLiveChannelSwitcher()
+    var isLiveChannelSwitching by mutableStateOf(false)
+    /**
+     * True once the tuner finished releasing for a live channel switch and the parent has not
+     * supplied the replacement channel yet. The host stays mounted until release completes so the
+     * native teardown never races removal of its AWT/webview parent.
+     */
+    var isLiveSurfaceReleased by mutableStateOf(false)
+    var liveChannelSwitchGuardJob by mutableStateOf<Job?>(null)
+    /**
+     * Bumped for every accepted live channel so the platform surface is recreated with a fresh
+     * controller. A released native controller is terminal and cannot attach another channel.
+     */
+    var liveSurfaceGeneration by mutableStateOf(0)
+    var progressWriter: PlayerProgressWriter = PlayerProgressWriter.Default
     var isScrubbingTimeline by mutableStateOf(false)
     var scrubbingPositionMs by mutableStateOf<Long?>(null)
     var pausedOverlayVisible by mutableStateOf(false)
@@ -196,7 +222,7 @@ internal class PlayerScreenRuntime(
     var speedBoostRestoreSpeed by mutableStateOf<Float?>(null)
     var isHoldToSpeedGestureActive by mutableStateOf(false)
     var initialSeekApplied by mutableStateOf(
-        initialPositionMs <= 0L && ((initialProgressFraction ?: 0f) <= 0f),
+        isLive || (initialPositionMs <= 0L && ((initialProgressFraction ?: 0f) <= 0f)),
     )
     var lastProgressPersistEpochMs by mutableStateOf(0L)
     var previousIsPlaying by mutableStateOf(false)

@@ -173,20 +173,27 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     }
     val playerSurfaceSourceUrl = if (isP2pPlaybackActive) p2pResolvedSourceUrl else activeSourceUrl
     val initialPositionRequestKey = currentInitialPositionRequestKey()
-    val currentPlayerSurfaceSource = playerSurfaceSourceUrl?.let { sourceUrl ->
-        PlayerSurfaceSource(
-            sourceUrl = sourceUrl,
-            sourceAudioUrl = activeSourceAudioUrl,
-            sourceHeaders = activeSourceHeaders,
-            sourceResponseHeaders = activeSourceResponseHeaders,
-            externalSubtitles = externalSubtitles,
-            streamType = activeStreamType,
-            initialPositionMs = activeInitialPositionMs.takeIf { it > 0L },
-            initialPositionRequestKey = initialPositionRequestKey,
-        )
-    }
+    val currentPlayerSurfaceSource = playerSurfaceSourceUrl
+        // The tuner handle is already released while a live switch waits for the parent's new
+        // channel; mounting here would re-attach the channel we just left. Release in flight keeps
+        // the host mounted (see `releaseInFlight`) so teardown never races surface removal.
+        ?.takeUnless { isLiveSurfaceReleased }
+        ?.let { sourceUrl ->
+            PlayerSurfaceSource(
+                sourceUrl = sourceUrl,
+                sourceAudioUrl = activeSourceAudioUrl,
+                sourceHeaders = activeSourceHeaders,
+                sourceResponseHeaders = activeSourceResponseHeaders,
+                externalSubtitles = externalSubtitles,
+                streamType = activeStreamType,
+                initialPositionMs = if (isLive) null else activeInitialPositionMs.takeIf { it > 0L },
+                initialPositionRequestKey = if (isLive) null else initialPositionRequestKey,
+            )
+        }
     val renderPlayerSurface = shouldRenderPlayerSurface(
         hasCurrentSource = currentPlayerSurfaceSource != null,
+        // Release already completed before a live switch clears the controller (see
+        // `switchLiveChannel`), so the retained-surface path is only for navigation release.
         hasLifecycleController = playerLifecycleController != null,
         releaseInFlight = playerReleaseSurfaceRetention.inFlight,
         desktop = isDesktop,
@@ -385,12 +392,20 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             playerSettingsUiState.introDbApiKey.isNotBlank() &&
             !activeSubmitIntroImdbId().isNullOrBlank(),
         showVideoSettings = isIos,
-        showSources = activeVideoId != null,
+        showSources = activeVideoId != null && !isLive,
         showEpisodes = isSeries,
-        showExternalPlayer = args.onOpenInExternalPlayer != null,
-        durationMs = playbackSnapshot.durationMs,
+        showExternalPlayer = !isLive && args.onOpenInExternalPlayer != null,
+        isLive = isLive,
+        liveBadgeLabel = liveBadgeLabel,
+        previousChannelLabel = previousChannelLabel,
+        nextChannelLabel = nextChannelLabel,
+        showPreviousChannel = isLive && onPreviousChannel != null,
+        showNextChannel = isLive && onNextChannel != null,
+        showRetry = canRetryLivePlayback,
+        retryLabel = retryLabel,
+        durationMs = if (isLive) 0L else playbackSnapshot.durationMs,
         positionMs = displayedPositionMs,
-        bufferedPositionMs = playbackSnapshot.bufferedPositionMs.coerceAtLeast(0L),
+        bufferedPositionMs = if (isLive) 0L else playbackSnapshot.bufferedPositionMs.coerceAtLeast(0L),
         sourceIsLoading = sourceStreamsState.isAnyLoading,
         sourceFilters = sourceFilters,
         sourceItems = sourceItems,
@@ -512,6 +527,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                             clearLiveGestureFeedbackState = gestureCallbacks.clearLiveGestureFeedback,
                             revealLockedOverlayState = gestureCallbacks.revealLockedOverlay,
                             commitHorizontalSeekState = gestureCallbacks.commitHorizontalSeek,
+                            horizontalSeekEnabledState = gestureCallbacks.horizontalSeekEnabled,
                         )
                 } else {
                     Modifier
@@ -521,62 +537,66 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         if (renderPlayerSurface) {
             val surfaceSource = currentPlayerSurfaceSource
             val sourceAvailable = surfaceSource != null
-            PlatformPlayerSurface(
-                sourceUrl = surfaceSource?.sourceUrl.orEmpty(),
-                sourceAvailable = sourceAvailable,
-                sourceAudioUrl = surfaceSource?.sourceAudioUrl,
-                sourceHeaders = surfaceSource?.sourceHeaders.orEmpty(),
-                sourceResponseHeaders = surfaceSource?.sourceResponseHeaders.orEmpty(),
-                externalSubtitles = surfaceSource?.externalSubtitles.orEmpty(),
-                streamType = surfaceSource?.streamType,
-                modifier = Modifier.fillMaxSize(),
-                playWhenReady = shouldPlay && sourceAvailable,
-                initialPositionMs = surfaceSource?.initialPositionMs,
-                initialPositionRequestKey = surfaceSource?.initialPositionRequestKey,
-                resizeMode = resizeMode,
-                playbackEngine = playbackEngineOverride,
-                playerControlsState = playerControlsState,
-                onPlayerControlsAction = { action -> handlePlayerControlsAction(action) },
-                onPlayerControlsEvent = { type, value -> handlePlayerControlsEvent(type, value) },
-                onPlayerControlsScrubChange = { positionMs ->
-                    handlePlayerControlsScrubChange(positionMs)
-                    true
-                },
-                onPlayerControlsScrubFinished = { positionMs ->
-                    handlePlayerControlsScrubFinished(positionMs)
-                    true
-                },
-                onInitialPositionHandled = { key, handled ->
-                    if (key == currentInitialPositionRequestKey()) {
-                        initialSeekApplied = handled
-                    }
-                },
-                onControllerReady = { controller ->
-                    playerController = controller.takeIf { sourceAvailable }
-                    playerLifecycleController = controller
-                    playerControllerSourceUrl = surfaceSource?.sourceUrl
-                },
-                onSnapshot = { snapshot ->
-                    if (!updatePlaybackSnapshot(snapshot)) return@PlatformPlayerSurface
-                    refreshAudioTracksIfChanged()
-                    if (!snapshot.isLoading) initialLoadCompleted = true
-                    if (snapshot.isEnded) {
-                        shouldPlay = false
-                        controlsVisible = !playerControlsLocked
-                    }
-                },
-                onError = { message ->
-                    if (message != null && tryRefreshCredentialedSourceAfterError(message)) {
-                        return@PlatformPlayerSurface
-                    }
-                    errorMessage = message
-                    if (message != null) {
-                        scrubbingPositionMs = null
-                        controlsVisible = !playerControlsLocked
-                        removeFailedStreamFromCache()
-                    }
-                },
-            )
+            // A live channel switch disposes the tuner; its controller is terminal, so a fresh
+            // surface (and controller) is required for the replacement channel.
+            key(if (isLive) liveSurfaceGeneration else 0) {
+                PlatformPlayerSurface(
+                    sourceUrl = surfaceSource?.sourceUrl.orEmpty(),
+                    sourceAvailable = sourceAvailable,
+                    sourceAudioUrl = surfaceSource?.sourceAudioUrl,
+                    sourceHeaders = surfaceSource?.sourceHeaders.orEmpty(),
+                    sourceResponseHeaders = surfaceSource?.sourceResponseHeaders.orEmpty(),
+                    externalSubtitles = surfaceSource?.externalSubtitles.orEmpty(),
+                    streamType = surfaceSource?.streamType,
+                    modifier = Modifier.fillMaxSize(),
+                    playWhenReady = shouldPlay && sourceAvailable,
+                    initialPositionMs = surfaceSource?.initialPositionMs,
+                    initialPositionRequestKey = surfaceSource?.initialPositionRequestKey,
+                    resizeMode = resizeMode,
+                    playbackEngine = playbackEngineOverride,
+                    playerControlsState = playerControlsState,
+                    onPlayerControlsAction = { action -> handlePlayerControlsAction(action) },
+                    onPlayerControlsEvent = { type, value -> handlePlayerControlsEvent(type, value) },
+                    onPlayerControlsScrubChange = { positionMs ->
+                        handlePlayerControlsScrubChange(positionMs)
+                        true
+                    },
+                    onPlayerControlsScrubFinished = { positionMs ->
+                        handlePlayerControlsScrubFinished(positionMs)
+                        true
+                    },
+                    onInitialPositionHandled = { key, handled ->
+                        if (key == currentInitialPositionRequestKey()) {
+                            initialSeekApplied = handled
+                        }
+                    },
+                    onControllerReady = { controller ->
+                        playerController = controller.takeIf { sourceAvailable }
+                        playerLifecycleController = controller
+                        playerControllerSourceUrl = surfaceSource?.sourceUrl
+                    },
+                    onSnapshot = { snapshot ->
+                        if (!updatePlaybackSnapshot(snapshot)) return@PlatformPlayerSurface
+                        refreshAudioTracksIfChanged()
+                        if (!snapshot.isLoading) initialLoadCompleted = true
+                        if (snapshot.isEnded) {
+                            shouldPlay = false
+                            controlsVisible = !playerControlsLocked
+                        }
+                    },
+                    onError = { message ->
+                        if (message != null && tryRefreshCredentialedSourceAfterError(message)) {
+                            return@PlatformPlayerSurface
+                        }
+                        applyPlaybackError(message)
+                        if (message != null) {
+                            scrubbingPositionMs = null
+                            controlsVisible = !playerControlsLocked
+                            if (!isLive) removeFailedStreamFromCache()
+                        }
+                    },
+                )
+            }
         }
 
         AnimatedVisibility(
@@ -683,7 +703,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, 
                 if (playerControlsLocked) unlockPlayerControls() else lockPlayerControls()
             },
             onBack = { requestBack() },
-            onPartyClick = if (PartyRepository.available.collectAsStateWithLifecycle().value) {
+            onPartyClick = if (!isLive && PartyRepository.available.collectAsStateWithLifecycle().value) {
                 { openPartyPanel() }
             } else {
                 null
@@ -710,10 +730,10 @@ private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, 
             } else {
                 null
             },
-            onSourcesClick = if (activeVideoId != null) { { openSourcesPanel() } } else null,
+            onSourcesClick = if (!isLive && activeVideoId != null) { { openSourcesPanel() } } else null,
             onEpisodesClick = if (isSeries) { { openEpisodesPanel() } } else null,
             onOpenInExternalPlayer = args.onOpenInExternalPlayer
-                ?.takeUnless { ServerStreams.isServerSourceId(activeProviderAddonId) }
+                ?.takeUnless { isLive || ServerStreams.isServerSourceId(activeProviderAddonId) }
                 ?.let { openExternal ->
                 {
                     val loadedSubtitles = addonSubtitles
@@ -771,6 +791,26 @@ private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, 
             onScrubFinished = { positionMs -> finishTimelineSeek(positionMs) },
             horizontalSafePadding = horizontalSafePadding,
             modifier = Modifier.fillMaxSize(),
+            liveBadgeLabel = liveBadgeLabel.takeIf { isLive },
+            showTimeline = !isLive,
+            onPreviousChannel = if (isLive && onPreviousChannel != null) {
+                { switchLiveChannel(PlayerLiveChannelDirection.Previous) }
+            } else {
+                null
+            },
+            onNextChannel = if (isLive && onNextChannel != null) {
+                { switchLiveChannel(PlayerLiveChannelDirection.Next) }
+            } else {
+                null
+            },
+            previousChannelLabel = previousChannelLabel,
+            nextChannelLabel = nextChannelLabel,
+            onRetry = if (canRetryLivePlayback) {
+                { retryLivePlayback() }
+            } else {
+                null
+            },
+            retryLabel = retryLabel,
         )
     }
 }
@@ -822,7 +862,7 @@ private fun PlayerScreenRuntime.requestBack() {
                     if (!playerReleaseSurfaceRetention.finish(releaseAttemptId)) {
                         return@releaseRetainedPlayerBeforeNavigation
                     }
-                    errorMessage = message
+                    applyReleaseFailure(message)
                     releaseFailed(message)
                 },
             )
@@ -854,6 +894,19 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
         PlayerControlsAction.KeyboardVolumeDown,
         PlayerControlsAction.KeyboardVolumeUp -> {
             return false
+        }
+        PlayerControlsAction.PreviousChannel -> {
+            switchLiveChannel(PlayerLiveChannelDirection.Previous)
+            return true
+        }
+        PlayerControlsAction.NextChannel -> {
+            switchLiveChannel(PlayerLiveChannelDirection.Next)
+            return true
+        }
+        PlayerControlsAction.Retry -> {
+            if (!isLive) return false
+            retryLivePlayback()
+            return true
         }
         PlayerControlsAction.ResizeMode -> cycleResizeMode()
         PlayerControlsAction.Speed -> cyclePlaybackSpeed()
@@ -929,9 +982,11 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             selectPlaybackSpeed(value.toFloat())
         }
         "reloadSources" -> {
+            if (isLive) return true
             prepareSourcesForPlayerControls(forceRefresh = true)
         }
         "selectSource" -> {
+            if (isLive) return true
             val streams = sourceStreamsState.groups.flatMap { it.streams }
             val stream = streams.getOrNull(value.toInt()) ?: return true
             if (requestP2pConsentForPlayerControls(stream = stream, episode = null)) return true
@@ -986,8 +1041,14 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             submitIntroStatusMessage = null
         }
         "submitIntroCommit" -> submitIntroFromPlayerControls()
-        "skipInterval" -> activeSkipInterval?.let { skipInterval(it) }
+        "skipInterval" -> {
+            // Live has no skip intervals and no seek; claim the event so the platform player never
+            // performs the seek a VOD skip prompt would have issued.
+            if (isLive) return true
+            activeSkipInterval?.let { skipInterval(it) }
+        }
         "playNextEpisode" -> {
+            if (isLive) return true
             if (nextEpisodeInfo?.hasAired == true && !nextEpisodeAutoPlaySearching && nextEpisodeAutoPlayCountdown == null) {
                 if (!partyBlocksControl()) playNextEpisode()
             }
@@ -1142,6 +1203,7 @@ private fun PlayerScreenRuntime.enableP2pForPlayerControls() {
 }
 
 private fun PlayerScreenRuntime.prepareSourcesForPlayerControls(forceRefresh: Boolean = false) {
+    if (isLive) return
     val vid = activeVideoId
     if (vid == null) {
         return
@@ -1170,6 +1232,7 @@ private fun Float.toCssAlphaString(): String {
 }
 
 private fun PlayerScreenRuntime.prepareEpisodesForPlayerControls() {
+    if (isLive) return
     if (!isSeries) return
     if (playerMetaVideos.isEmpty()) {
         scope.launch {
@@ -1261,12 +1324,18 @@ private fun formatPlayerControlsSeconds(seconds: Double): String {
 }
 
 private fun PlayerScreenRuntime.handlePlayerControlsScrubChange(positionMs: Long) {
+    if (!shouldSeekPlayback) return
     playerControlsLog.d { "scrubChange positionMs=$positionMs ${playerControlLogContext()}" }
     isScrubbingTimeline = true
     scrubbingPositionMs = positionMs
 }
 
 private fun PlayerScreenRuntime.handlePlayerControlsScrubFinished(positionMs: Long) {
+    if (!shouldSeekPlayback) {
+        isScrubbingTimeline = false
+        scrubbingPositionMs = null
+        return
+    }
     playerControlsLog.d { "scrubFinished positionMs=$positionMs controller=${playerController != null} ${playerControlLogContext()}" }
     finishTimelineSeek(positionMs)
 }
@@ -1289,6 +1358,8 @@ private fun String.shouldLogPlayerControlsEvent(): Boolean {
 }
 
 private fun PlayerScreenRuntime.openInExternalPlayer() {
+    // A live tuner has no resume point and must never seed VOD progress from an external handoff.
+    if (isLive) return
     val openExternal = args.onOpenInExternalPlayer ?: return
     val loadedSubtitles = addonSubtitles
         .takeIf { it.isNotEmpty() }
@@ -1696,7 +1767,7 @@ private fun BoxScope.RenderPlaybackOverlays(
             renderedGestureFeedback = renderedGestureFeedback,
             initialLoadCompleted = initialLoadCompleted,
             pausedOverlayVisible = pausedOverlayVisible,
-            activeSkipInterval = activeSkipInterval.takeUnless { isDesktop },
+            activeSkipInterval = activeSkipInterval.takeUnless { isDesktop || isLive },
             skipsToPostCredits = activeSkipInterval?.internalSkipAction(skipIntervals, playbackSnapshot.durationMs)?.skipsToPostCredits == true,
             skipIntervalDismissed = skipIntervalDismissed,
             controlsVisible = controlsVisible,
@@ -1721,6 +1792,7 @@ private fun BoxScope.RenderPlaybackOverlays(
             },
             errorMessage = errorMessage,
             onDismissError = { requestBack() },
+            showTimeline = !isLive,
         )
     }
 }

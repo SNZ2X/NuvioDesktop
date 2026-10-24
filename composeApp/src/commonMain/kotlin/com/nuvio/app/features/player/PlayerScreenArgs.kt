@@ -51,4 +51,8 @@ internal data class PlayerScreenArgs(
     val sourceFilename: String? = null,
     val onOpenPartyMedia: (PartyMedia) -> Unit = {},
     val stream: com.nuvio.app.features.streams.StreamItem? = null,
+    /** Live TV tuner session: no resume/progress/scrobble/VOD metadata behaviour. */
+    val isLive: Boolean = false,
+    val onPreviousChannel: (() -> Unit)? = null,
+    val onNextChannel: (() -> Unit)? = null,
 )

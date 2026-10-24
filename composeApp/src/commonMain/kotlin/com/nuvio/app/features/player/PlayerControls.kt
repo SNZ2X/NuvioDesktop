@@ -126,6 +126,14 @@ internal fun PlayerControlsShell(
     onScrubFinished: (Long) -> Unit,
     horizontalSafePadding: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
+    liveBadgeLabel: String? = null,
+    showTimeline: Boolean = true,
+    onPreviousChannel: (() -> Unit)? = null,
+    onNextChannel: (() -> Unit)? = null,
+    previousChannelLabel: String = "",
+    nextChannelLabel: String = "",
+    onRetry: (() -> Unit)? = null,
+    retryLabel: String = "",
 ) {
     val density = LocalDensity.current
     var timelineHeight by remember { mutableStateOf(0.dp) }
@@ -181,6 +189,7 @@ internal fun PlayerControlsShell(
                     metrics = metrics,
                     isLocked = isLocked,
                     showActions = showPlaybackControls,
+                    liveBadgeLabel = liveBadgeLabel,
                     onSubmitIntroClick = onSubmitIntroClick,
                     parentalWarnings = parentalWarnings,
                     showParentalGuide = showParentalGuide,
@@ -265,6 +274,7 @@ internal fun PlayerControlsShell(
                     onAudioClick = onAudioClick,
                     onSourcesClick = onSourcesClick,
                     onEpisodesClick = onEpisodesClick,
+                    showTimeline = showTimeline,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
@@ -290,17 +300,20 @@ internal fun PlayerControlsShell(
                             releaseInfo = releaseInfo,
                             metrics = metrics,
                             badges = badges,
+                            liveBadgeLabel = liveBadgeLabel,
                         )
                     }
-                    PlayerTimeline(
-                        snapshot = playbackSnapshot,
-                        displayedPositionMs = displayedPositionMs,
-                        onScrubChange = onScrubChange,
-                        onScrubFinished = {
-                            onInteraction()
-                            onScrubFinished(it)
-                        },
-                    )
+                    if (showTimeline) {
+                        PlayerTimeline(
+                            snapshot = playbackSnapshot,
+                            displayedPositionMs = displayedPositionMs,
+                            onScrubChange = onScrubChange,
+                            onScrubFinished = {
+                                onInteraction()
+                                onScrubFinished(it)
+                            },
+                        )
+                    }
                     PlayerControlActions(
                         playbackSnapshot = playbackSnapshot,
                         displayedPositionMs = displayedPositionMs,
@@ -320,6 +333,13 @@ internal fun PlayerControlsShell(
                         onStreamInfoClick = onStreamInfoClick,
                         onSubmitIntroClick = onSubmitIntroClick,
                         onInteraction = onInteraction,
+                        showRuntime = showTimeline,
+                        onPreviousChannel = onPreviousChannel,
+                        onNextChannel = onNextChannel,
+                        previousChannelLabel = previousChannelLabel,
+                        nextChannelLabel = nextChannelLabel,
+                        onRetry = onRetry,
+                        retryLabel = retryLabel,
                     )
                 }
             }
@@ -349,6 +369,7 @@ private fun PlayerHeader(
     partyActive: Boolean,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    liveBadgeLabel: String? = null,
 ) {
     val typeScale = MaterialTheme.nuvioTypeScale
     val metadataAlpha by animateFloatAsState(
@@ -369,6 +390,9 @@ private fun PlayerHeader(
                     modifier = Modifier.graphicsLayer { alpha = metadataAlpha },
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    if (!liveBadgeLabel.isNullOrBlank()) {
+                        LiveBadge(label = liveBadgeLabel)
+                    }
                     Text(
                         text = title,
                         style = typeScale.titleLg.copy(
@@ -635,6 +659,7 @@ private fun ProgressControls(
     onAudioClick: () -> Unit,
     onSourcesClick: (() -> Unit)? = null,
     onEpisodesClick: (() -> Unit)? = null,
+    showTimeline: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val aspectRatioPainter = appIconPainter(AppIconResource.PlayerAspectRatio)
@@ -644,13 +669,15 @@ private fun ProgressControls(
     val episodesPainter = appIconPainter(AppIconResource.PlayerEpisodes)
 
     Column(modifier = modifier) {
-        PlayerSeekBar(
-            durationMs = playbackSnapshot.durationMs,
-            displayedPositionMs = displayedPositionMs,
-            metrics = metrics,
-            onScrubChange = onScrubChange,
-            onScrubFinished = onScrubFinished,
-        )
+        if (showTimeline) {
+            PlayerSeekBar(
+                durationMs = playbackSnapshot.durationMs,
+                displayedPositionMs = displayedPositionMs,
+                metrics = metrics,
+                onScrubChange = onScrubChange,
+                onScrubFinished = onScrubFinished,
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
@@ -785,6 +812,7 @@ internal fun LockedPlayerOverlay(
     onUnlock: () -> Unit,
     useLegacyLayout: Boolean = false,
     showRemainingTime: Boolean = false,
+    showTimeline: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val durationMs = playbackSnapshot.durationMs.coerceAtLeast(1L)
@@ -850,44 +878,46 @@ internal fun LockedPlayerOverlay(
                 .padding(horizontal = horizontalSafePadding + metrics.horizontalPadding)
                 .padding(bottom = metrics.sliderBottomOffset),
         ) {
-            if (useLegacyLayout) {
-                Slider(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(metrics.sliderTouchHeight)
-                        .graphicsLayer(scaleY = metrics.sliderScaleY),
-                    value = displayedPositionMs.coerceIn(0L, durationMs).toFloat(),
-                    onValueChange = {},
-                    onValueChangeFinished = {},
-                    valueRange = 0f..durationMs.toFloat(),
-                    enabled = false,
-                    colors = sliderColors,
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp)
-                        .padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TimePill(text = formatPlaybackTime(displayedPositionMs), fontSize = metrics.timeSize)
-                    TimePill(text = formatPlaybackTime(durationMs), fontSize = metrics.timeSize)
+            if (showTimeline) {
+                if (useLegacyLayout) {
+                    Slider(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(metrics.sliderTouchHeight)
+                            .graphicsLayer(scaleY = metrics.sliderScaleY),
+                        value = displayedPositionMs.coerceIn(0L, durationMs).toFloat(),
+                        onValueChange = {},
+                        onValueChangeFinished = {},
+                        valueRange = 0f..durationMs.toFloat(),
+                        enabled = false,
+                        colors = sliderColors,
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp)
+                            .padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TimePill(text = formatPlaybackTime(displayedPositionMs), fontSize = metrics.timeSize)
+                        TimePill(text = formatPlaybackTime(durationMs), fontSize = metrics.timeSize)
+                    }
+                } else {
+                    PlayerTimeline(
+                        snapshot = playbackSnapshot,
+                        displayedPositionMs = displayedPositionMs,
+                        onScrubChange = {},
+                        onScrubFinished = {},
+                        enabled = false,
+                    )
+                    Text(
+                        text = formatPlaybackRuntime(displayedPositionMs, playbackSnapshot.durationMs, showRemainingTime),
+                        style = MaterialTheme.nuvioTypeScale.bodyMd.copy(fontSize = (metrics.timeSize.value + 2).sp),
+                        color = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.align(Alignment.End),
+                    )
                 }
-            } else {
-                PlayerTimeline(
-                    snapshot = playbackSnapshot,
-                    displayedPositionMs = displayedPositionMs,
-                    onScrubChange = {},
-                    onScrubFinished = {},
-                    enabled = false,
-                )
-                Text(
-                    text = formatPlaybackRuntime(displayedPositionMs, playbackSnapshot.durationMs, showRemainingTime),
-                    style = MaterialTheme.nuvioTypeScale.bodyMd.copy(fontSize = (metrics.timeSize.value + 2).sp),
-                    color = Color.White.copy(alpha = 0.9f),
-                    modifier = Modifier.align(Alignment.End),
-                )
             }
         }
     }

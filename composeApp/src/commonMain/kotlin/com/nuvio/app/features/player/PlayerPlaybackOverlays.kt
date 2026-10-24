@@ -61,6 +61,7 @@ internal fun BoxScope.PlayerPlaybackOverlays(
     onDismissNextEpisode: () -> Unit,
     errorMessage: String?,
     onDismissError: () -> Unit,
+    showTimeline: Boolean = true,
 ) {
     AnimatedVisibility(
         visible = playerControlsLocked && lockedOverlayVisible,
@@ -75,6 +76,7 @@ internal fun BoxScope.PlayerPlaybackOverlays(
             onUnlock = onUnlock,
             useLegacyLayout = useLegacyLayout,
             showRemainingTime = showRemainingTime,
+            showTimeline = showTimeline,
             modifier = Modifier.fillMaxSize(),
         )
     }

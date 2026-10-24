@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,6 +46,12 @@ import nuvio.composeapp.generated.resources.parental_severity_moderate
 import nuvio.composeapp.generated.resources.parental_severity_severe
 import nuvio.composeapp.generated.resources.parental_violence
 import nuvio.composeapp.generated.resources.compose_player_tba
+import nuvio.composeapp.generated.resources.player_live_badge
+import nuvio.composeapp.generated.resources.player_live_channel_error
+import nuvio.composeapp.generated.resources.player_live_release_error
+import nuvio.composeapp.generated.resources.player_live_next_channel
+import nuvio.composeapp.generated.resources.player_live_previous_channel
+import nuvio.composeapp.generated.resources.player_live_retry
 import org.jetbrains.compose.resources.stringResource
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -63,12 +70,12 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
         MetaScreenSettingsRepository.ensureLoaded()
         MetaScreenSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
-    val watchedUiState by remember {
-        WatchedRepository.ensureLoaded()
+    val watchedUiState by remember(args.isLive) {
+        if (!args.isLive) WatchedRepository.ensureLoaded()
         WatchedRepository.uiState
     }.collectAsStateWithLifecycle()
-    val watchProgressUiState by remember {
-        WatchProgressRepository.ensureLoaded()
+    val watchProgressUiState by remember(args.isLive) {
+        if (!args.isLive) WatchProgressRepository.ensureLoaded()
         WatchProgressRepository.uiState
     }.collectAsStateWithLifecycle()
     val sourceStreamsState by PlayerStreamsRepository.sourceState.collectAsStateWithLifecycle()
@@ -80,6 +87,9 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
 
     val runtime = remember { PlayerScreenRuntime(args) }
     runtime.args = args
+    LaunchedEffect(args.sourceUrl, args.isLive) {
+        runtime.syncLiveSourceFromArgs()
+    }
 
     BoxWithConstraints(
         modifier = args.modifier
@@ -141,6 +151,12 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
         runtime.airsPrefix = stringResource(Res.string.compose_player_airs_prefix)
         runtime.tbaLabel = stringResource(Res.string.compose_player_tba)
         runtime.genericUnknownLabel = stringResource(Res.string.generic_unknown)
+        runtime.liveBadgeLabel = stringResource(Res.string.player_live_badge)
+        runtime.previousChannelLabel = stringResource(Res.string.player_live_previous_channel)
+        runtime.nextChannelLabel = stringResource(Res.string.player_live_next_channel)
+        runtime.retryLabel = stringResource(Res.string.player_live_retry)
+        runtime.livePlaybackErrorMessage = stringResource(Res.string.player_live_channel_error)
+        runtime.liveReleaseErrorMessage = stringResource(Res.string.player_live_release_error)
         runtime.parentalGuideLabels = ParentalGuideLabels(
             nudity = stringResource(Res.string.parental_nudity),
             violence = stringResource(Res.string.parental_violence),
@@ -151,7 +167,7 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
             moderate = stringResource(Res.string.parental_severity_moderate),
             mild = stringResource(Res.string.parental_severity_mild),
         )
-        if (runtime.playerMetaVideos.isEmpty()) {
+        if (!args.isLive && runtime.playerMetaVideos.isEmpty()) {
             runtime.playerMetaVideos = MetaDetailsRepository.peek(
                 args.parentMetaType,
                 args.parentMetaId,

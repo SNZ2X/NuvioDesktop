@@ -58,6 +58,11 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     }
 
     LaunchedEffect(parentMetaType, parentMetaId) {
+        if (!shouldLoadVodMetadata) {
+            playerMeta = null
+            playerMetaVideos = emptyList()
+            return@LaunchedEffect
+        }
         playerMeta = MetaDetailsRepository.peek(parentMetaType, parentMetaId)
         playerMetaVideos = playerMeta?.videos.orEmpty()
         if (playerMetaVideos.isEmpty()) {
@@ -69,6 +74,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     }
 
     LaunchedEffect(metaUiState.meta, parentMetaType, parentMetaId) {
+        if (!shouldLoadVodMetadata) return@LaunchedEffect
         val currentMeta = metaUiState.meta ?: return@LaunchedEffect
         if (currentMeta.type == parentMetaType && currentMeta.id == parentMetaId) {
             playerMeta = currentMeta
@@ -123,7 +129,9 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         PlayerStreamsRepository.clearEpisodeStreams()
         SubtitleRepository.clear()
         autoFetchedAddonSubtitlesForKey = null
-        WatchProgressRepository.ensureLoaded()
+        if (shouldPersistPlaybackProgress) {
+            WatchProgressRepository.ensureLoaded()
+        }
     }
 
     LaunchedEffect(
@@ -173,9 +181,11 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            errorMessage = getString(
-                Res.string.player_error_failed_start_torrent,
-                error.message ?: genericUnknownLabel,
+            applyPlaybackError(
+                getString(
+                    Res.string.player_error_failed_start_torrent,
+                    error.message ?: genericUnknownLabel,
+                ),
             )
             controlsVisible = !playerControlsLocked
             initialLoadCompleted = true
@@ -190,7 +200,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             playerControllerSourceUrl = null
             playbackSnapshot = PlayerPlaybackSnapshot()
             initialLoadCompleted = true
-            errorMessage = getString(Res.string.player_error_torrent, state.message)
+            applyPlaybackError(getString(Res.string.player_error_torrent, state.message))
             controlsVisible = !playerControlsLocked
         }
     }
@@ -268,6 +278,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         activeSourceUrl,
         addonSubtitleFetchKey,
     ) {
+        if (!shouldLoadVodMetadata) return@LaunchedEffect
         if (activeSourceUrl.startsWith("file:") && externalSubtitles.isNotEmpty()) return@LaunchedEffect
         val fetchKey = addonSubtitleFetchKey ?: return@LaunchedEffect
         if (autoFetchedAddonSubtitlesForKey == fetchKey) return@LaunchedEffect
@@ -334,28 +345,25 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             return@LaunchedEffect
         }
 
-        val progressFraction = activeInitialProgressFraction
-            ?.takeIf { it > 0f }
-            ?.coerceIn(0f, 1f)
-        val targetPositionMs = when {
-            activeInitialPositionMs > 0L -> activeInitialPositionMs
-            progressFraction != null && playbackSnapshot.durationMs > 0L -> {
-                (playbackSnapshot.durationMs.toDouble() * progressFraction.toDouble()).toLong()
+        when (val decision = initialSeekDecision()) {
+            PlayerInitialSeekDecision.Suppressed -> {
+                initialSeekApplied = true
+                return@LaunchedEffect
             }
-            progressFraction != null -> return@LaunchedEffect
-            else -> 0L
+            PlayerInitialSeekDecision.Waiting -> return@LaunchedEffect
+            is PlayerInitialSeekDecision.Seek -> {
+                if (decision.positionMs <= 0L) {
+                    initialSeekApplied = true
+                    return@LaunchedEffect
+                }
+                if (isDesktop && activeInitialPositionMs > 0L) {
+                    initialSeekApplied = true
+                    return@LaunchedEffect
+                }
+                controller.seekTo(decision.positionMs)
+                initialSeekApplied = true
+            }
         }
-        if (targetPositionMs <= 0L) {
-            initialSeekApplied = true
-            return@LaunchedEffect
-        }
-        if (isDesktop && activeInitialPositionMs > 0L) {
-            initialSeekApplied = true
-            return@LaunchedEffect
-        }
-
-        controller.seekTo(targetPositionMs)
-        initialSeekApplied = true
     }
 
     BindPlayerUiVisibilityEffects()
@@ -448,7 +456,7 @@ private fun PlayerScreenRuntime.BindPlayerUiVisibilityEffects() {
         playbackSnapshot.durationMs,
     ) {
         ServerPlayback.onPlaybackSnapshot(
-            url = activeSourceUrl,
+            url = activeSourceUrl.takeIf { shouldPersistPlaybackProgress },
             positionMs = playbackSnapshot.positionMs,
             isPlaying = playbackSnapshot.isPlaying,
             isLoading = playbackSnapshot.isLoading,
@@ -488,8 +496,9 @@ private fun PlayerScreenRuntime.BindPlayerUiVisibilityEffects() {
 
 @Composable
 private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
-    val shuffleProfile by remember {
-        EpisodeShuffleRepository.ensureLoaded()
+    val shuffleProfile by remember(isLive) {
+        // Episode shuffle is a series/VOD feature; live never reads its per-profile state.
+        if (!isLive) EpisodeShuffleRepository.ensureLoaded()
         EpisodeShuffleRepository.uiState
     }.collectAsStateWithLifecycle()
     val shuffleSettings = remember(shuffleProfile, profileId, parentMetaId, parentMetaType) {
@@ -504,6 +513,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         parentalGuideHasShown = false
         playbackStartedForParentalGuide = false
 
+        if (!shouldLoadVodMetadata) return@LaunchedEffect
         val imdbId = resolveParentalGuideImdbId() ?: return@LaunchedEffect
         val guide = ParentalGuideRepository.getParentalGuide(imdbId) ?: return@LaunchedEffect
         parentalWarnings = buildParentalWarnings(guide, parentalGuideLabels)
@@ -539,6 +549,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         nextEpisodeCardDismissed = false
         cancelNextEpisodeAutoPlay()
 
+        if (!shouldLoadVodMetadata) return@LaunchedEffect
         if (!playerSettingsUiState.skipIntroEnabled) return@LaunchedEffect
 
         if ((contentType ?: parentMetaType).equals("movie", ignoreCase = true)) {
@@ -826,6 +837,9 @@ internal fun PlayerScreenRuntime.removeFailedStreamFromCache() {
 }
 
 internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message: String?): Boolean {
+    // Live channels carry no ad-hoc stream list to re-resolve, and their URLs must never leave the
+    // tuner surface through an error path.
+    if (isLive) return false
     if (ServerStreams.isServerSourceId(activeProviderAddonId)) return retryServerSourceAfterError(message)
     val failedUrl = activeSourceUrl
     if (!failedUrl.hasLikelyExpiringPlaybackCredentials()) return false
@@ -883,14 +897,14 @@ internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message:
 
             val stream = refreshedStream
             if (stream == null) {
-                errorMessage = message
+                applyPlaybackError(message)
                 controlsVisible = !playerControlsLocked
                 return@launch
             }
 
             val refreshedUrl = stream.playableDirectUrl
             if (refreshedUrl.isNullOrBlank() || refreshedUrl == failedUrl) {
-                errorMessage = message
+                applyPlaybackError(message)
                 controlsVisible = !playerControlsLocked
                 return@launch
             }
@@ -931,7 +945,7 @@ private fun PlayerScreenRuntime.retryServerSourceAfterError(message: String?): B
     credentialRefreshJob = scope.launch {
         val playback = ServerPlayback.fallback(failedUrl)
         if (playback == null) {
-            errorMessage = message
+            applyPlaybackError(message)
             controlsVisible = !playerControlsLocked
             return@launch
         }

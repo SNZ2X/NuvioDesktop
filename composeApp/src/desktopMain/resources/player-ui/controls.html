@@ -26,6 +26,9 @@
     <symbol id="icon-skip-next" viewBox="0 0 24 24">
       <path d="M5 4.9c0-.78.86-1.26 1.53-.84L15 9.36V5a1 1 0 1 1 2 0v14a1 1 0 1 1-2 0v-4.36l-8.47 5.3A1 1 0 0 1 5 19.1V4.9Z"/>
     </symbol>
+    <symbol id="icon-skip-previous" viewBox="0 0 24 24">
+      <path d="M19 4.9c0-.78-.86-1.26-1.53-.84L9 9.36V5a1 1 0 1 1-2 0v14a1 1 0 1 1 2 0v-4.36l8.47 5.3A1 1 0 0 0 19 19.1V4.9Z"/>
+    </symbol>
     <symbol id="icon-build" viewBox="0 0 24 24">
       <path d="M22 19.59 12.41 10 14 8.41l1.17 1.17 2.83-2.83-1.17-1.17L19.66 2.75A6 6 0 0 0 12.2 10.2L2.3 20.1a1 1 0 0 0 0 1.41l.19.19a1 1 0 0 0 1.41 0l9.9-9.9A6 6 0 0 0 21.25 4.34l-2.83 2.83 1.17 1.17-2.83 2.83L15.59 10 14 11.59 20.41 18 22 19.59Z"/>
     </symbol>
@@ -186,6 +189,9 @@
         <div class="playback-error-content">
           <h1 class="playback-error-title" id="playbackErrorTitle">Playback error</h1>
           <p class="playback-error-message" id="playbackErrorMessage"></p>
+          <button class="playback-error-action" id="playbackErrorRetry" type="button" data-command="retry" hidden>
+            <span id="playbackErrorRetryLabel">Retry</span>
+          </button>
           <button class="playback-error-action" id="playbackErrorAction" type="button" data-command="back">
             <span id="playbackErrorActionLabel">Go back</span>
           </button>
@@ -230,6 +236,7 @@
 
       <section class="progress" aria-label="Playback progress">
         <section class="metadata" aria-label="Playback metadata">
+          <span class="live-badge" id="liveBadge" hidden aria-live="off"><span class="live-badge-dot"></span><span id="liveBadgeLabel">LIVE</span></span>
           <div class="title" id="title"></div>
           <div class="episode" id="episode" hidden></div>
           <div class="meta-row">
@@ -247,6 +254,12 @@
           <div class="action-pill">
             <button class="action playback-action" id="toggle" data-command="toggle" aria-label="Play">
               <svg><use id="toggleIcon" href="#icon-play"></use></svg><span id="toggleLabel">Play</span>
+            </button>
+            <button class="action" id="previousChannelButton" data-command="previousChannel" aria-label="Previous channel" hidden>
+              <svg><use href="#icon-skip-previous"></use></svg><span id="previousChannelButtonLabel">Previous channel</span>
+            </button>
+            <button class="action" id="nextChannelButton" data-command="nextChannel" aria-label="Next channel" hidden>
+              <svg><use href="#icon-skip-next"></use></svg><span id="nextChannelButtonLabel">Next channel</span>
             </button>
             <button class="action optional" id="nextEpisodeButton" data-command="playNextEpisode" aria-label="Next episode" hidden>
               <svg><use href="#icon-skip-next"></use></svg><span id="nextEpisodeButtonLabel">Next episode</span>

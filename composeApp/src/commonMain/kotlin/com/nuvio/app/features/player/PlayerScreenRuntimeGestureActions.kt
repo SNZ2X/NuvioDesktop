@@ -31,6 +31,7 @@ internal data class PlayerSurfaceGestureCallbacks(
     val playerControlsLocked: State<Boolean>,
     val currentPositionMs: State<Long>,
     val currentDurationMs: State<Long>,
+    val horizontalSeekEnabled: State<Boolean>,
     val commitHorizontalSeek: State<(Long) -> Unit>,
 )
 
@@ -215,6 +216,7 @@ internal fun PlayerScreenRuntime.applyNativePlaybackState(play: Boolean) {
 }
 
 internal fun PlayerScreenRuntime.seekFromNativeControls(offsetMs: Long, revealControls: Boolean = true): Boolean {
+    if (!shouldSeekPlayback) return true
     if (isPartySynced) {
         seekBy(offsetMs, revealControls)
         return true
@@ -224,6 +226,11 @@ internal fun PlayerScreenRuntime.seekFromNativeControls(offsetMs: Long, revealCo
 }
 
 internal fun PlayerScreenRuntime.finishTimelineSeek(positionMs: Long) {
+    if (!shouldSeekPlayback) {
+        isScrubbingTimeline = false
+        scrubbingPositionMs = null
+        return
+    }
     val targetMs = if (isPartyControlLocked) ownSeekTarget(positionMs) else positionMs
     if (targetMs == null) {
         isScrubbingTimeline = false
@@ -237,6 +244,7 @@ internal fun PlayerScreenRuntime.finishTimelineSeek(positionMs: Long) {
 }
 
 internal fun PlayerScreenRuntime.skipInterval(interval: SkipInterval) {
+    if (!shouldSeekPlayback) return
     val durationMs = playbackSnapshot.durationMs
     val rawMs = interval.internalSkipAction(skipIntervals, durationMs)?.targetMs ?: return
     val requestedMs = if (durationMs > 0L) rawMs.coerceAtMost(durationMs - 1) else rawMs
@@ -265,6 +273,7 @@ internal fun PlayerScreenRuntime.setPlaybackPlaying(playing: Boolean) {
 }
 
 internal fun PlayerScreenRuntime.seekBy(offsetMs: Long, revealControls: Boolean = true) {
+    if (!shouldSeekPlayback) return
     val fromMs = pendingSeekTarget
         ?.takeIf { (_, mark) -> mark.elapsedNow() < PendingSeekWindow }
         ?.first
@@ -282,6 +291,7 @@ internal fun PlayerScreenRuntime.prepareSeekByForNativeFallback(
     offsetMs: Long,
     revealControls: Boolean = true,
 ) {
+    if (!shouldSeekPlayback) return
     applySeekByControlFeedback(offsetMs, revealControls)
 }
 
@@ -313,6 +323,7 @@ private fun PlayerScreenRuntime.handleDoubleTapSeek(
     direction: PlayerSeekDirection,
     sendToController: Boolean,
 ) {
+    if (!shouldSeekPlayback) return
     val currentPositionMs = playbackSnapshot.positionMs.coerceAtLeast(0L)
     val currentSeekState = accumulatedSeekState
     val nextState = if (currentSeekState?.direction == direction) {
@@ -465,7 +476,9 @@ internal fun PlayerScreenRuntime.rememberSurfaceGestureCallbacks(): PlayerSurfac
         playerControlsLocked = rememberUpdatedState(playerControlsLocked),
         currentPositionMs = rememberUpdatedState(playbackSnapshot.positionMs.coerceAtLeast(0L)),
         currentDurationMs = rememberUpdatedState(playbackSnapshot.durationMs),
+        horizontalSeekEnabled = rememberUpdatedState(shouldSeekPlayback),
         commitHorizontalSeek = rememberUpdatedState { requestedPositionMs: Long ->
+            if (!shouldSeekPlayback) return@rememberUpdatedState
             val targetPositionMs = if (isPartyControlLocked) {
                 ownSeekTarget(requestedPositionMs) ?: return@rememberUpdatedState
             } else {

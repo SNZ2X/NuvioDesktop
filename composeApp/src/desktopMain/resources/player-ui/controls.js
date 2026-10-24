@@ -13,6 +13,8 @@ const playbackErrorTitle = document.getElementById("playbackErrorTitle");
 const playbackErrorMessage = document.getElementById("playbackErrorMessage");
 const playbackErrorAction = document.getElementById("playbackErrorAction");
 const playbackErrorActionLabel = document.getElementById("playbackErrorActionLabel");
+const playbackErrorRetry = document.getElementById("playbackErrorRetry");
+const playbackErrorRetryLabel = document.getElementById("playbackErrorRetryLabel");
 const pauseMetadataOverlay = document.getElementById("pauseMetadataOverlay");
 const pauseWatchingLabel = document.getElementById("pauseWatchingLabel");
 const pauseLogo = document.getElementById("pauseLogo");
@@ -25,6 +27,12 @@ const toggleIcon = document.getElementById("toggleIcon");
 const toggleLabel = document.getElementById("toggleLabel");
 const nextEpisodeButton = document.getElementById("nextEpisodeButton");
 const nextEpisodeButtonLabel = document.getElementById("nextEpisodeButtonLabel");
+const liveBadge = document.getElementById("liveBadge");
+const liveBadgeLabel = document.getElementById("liveBadgeLabel");
+const previousChannelButton = document.getElementById("previousChannelButton");
+const previousChannelButtonLabel = document.getElementById("previousChannelButtonLabel");
+const nextChannelButton = document.getElementById("nextChannelButton");
+const nextChannelButtonLabel = document.getElementById("nextChannelButtonLabel");
 const fullscreenButton = document.getElementById("fullscreenButton");
 const pipButton = document.getElementById("pipButton");
 const fullscreenIcon = document.getElementById("fullscreenIcon");
@@ -305,6 +313,14 @@ let state = {
   showSources: false,
   showEpisodes: false,
   showExternalPlayer: false,
+  isLive: false,
+  liveBadgeLabel: "LIVE",
+  previousChannelLabel: "Previous channel",
+  nextChannelLabel: "Next channel",
+  showPreviousChannel: false,
+  showNextChannel: false,
+  showRetry: false,
+  retryLabel: "Retry",
   durationMs: 0,
   positionMs: 0,
   bufferedPositionMs: 0,
@@ -2190,6 +2206,12 @@ const renderPlaybackError = () => {
   playbackErrorMessage.textContent = messageText;
   playbackErrorActionLabel.textContent = actionText || "Go back";
   playbackErrorAction.setAttribute("aria-label", actionText || "Go back");
+  if (playbackErrorRetry) {
+    const retryText = String(state.retryLabel || "Retry").trim();
+    playbackErrorRetry.hidden = !(showError && state.showRetry);
+    playbackErrorRetryLabel.textContent = retryText || "Retry";
+    playbackErrorRetry.setAttribute("aria-label", retryText || "Retry");
+  }
 
   return showError;
 };
@@ -2482,6 +2504,27 @@ const renderChrome = () => {
   setVisible(episodesButton, Boolean(state.showEpisodes));
   syncActionFocusState();
 
+  const isLive = Boolean(state.isLive);
+  root.classList.toggle("is-live", isLive);
+  if (liveBadge) {
+    liveBadge.hidden = !isLive;
+    liveBadgeLabel.textContent = String(state.liveBadgeLabel || "LIVE").trim() || "LIVE";
+  }
+  if (previousChannelButton) {
+    previousChannelButton.hidden = !(isLive && state.showPreviousChannel);
+    const label = String(state.previousChannelLabel || "Previous channel").trim();
+    previousChannelButton.setAttribute("aria-label", label);
+    previousChannelButton.setAttribute("title", label);
+    if (previousChannelButtonLabel) previousChannelButtonLabel.textContent = label;
+  }
+  if (nextChannelButton) {
+    nextChannelButton.hidden = !(isLive && state.showNextChannel);
+    const label = String(state.nextChannelLabel || "Next channel").trim();
+    nextChannelButton.setAttribute("aria-label", label);
+    nextChannelButton.setAttribute("title", label);
+    if (nextChannelButtonLabel) nextChannelButtonLabel.textContent = label;
+  }
+
   const playPauseLabel = isPlaying ? state.pauseLabel : state.playLabel;
   if (toggle) {
     toggle.setAttribute("aria-label", playPauseLabel || (isPlaying ? "Pause" : "Play"));
@@ -2567,10 +2610,16 @@ const shortcutCommandForEvent = event => {
       return "keyboardToggle";
     case "ArrowLeft":
     case "KeyJ":
+      if (state.isLive) return "";
       return isShift ? "keyboardFineSeekBack" : "keyboardSeekBack";
     case "ArrowRight":
     case "KeyL":
+      if (state.isLive) return "";
       return isShift ? "keyboardFineSeekForward" : "keyboardSeekForward";
+    case "PageUp":
+      return state.isLive && state.showPreviousChannel ? "previousChannel" : "";
+    case "PageDown":
+      return state.isLive && state.showNextChannel ? "nextChannel" : "";
     case "ArrowUp":
       return "keyboardVolumeUp";
     case "ArrowDown":
@@ -2677,6 +2726,7 @@ const finishPartySeek = () => {
 };
 
 const fineSeek = isForward => {
+  if (state.isLive) return;
   const direction = isForward ? "forward" : "backward";
   const stepMs = isForward ? 1000 : -1000;
 
@@ -3148,6 +3198,7 @@ nextEpisodeCard.addEventListener("click", event => {
 });
 
 seek.addEventListener("input", () => {
+  if (state.isLive) return;
   noteChromeActivity();
   isScrubbing = true;
   scrubPositionMs = rangePositionMs();
@@ -3156,6 +3207,7 @@ seek.addEventListener("input", () => {
 });
 
 seek.addEventListener("change", () => {
+  if (state.isLive) return;
   noteChromeActivity();
   scrubPositionMs = rangePositionMs();
   isScrubbing = false;
@@ -3659,7 +3711,7 @@ root.addEventListener("dblclick", event => {
 root.addEventListener("wheel", event => {
   if (playbackErrorText() || activeModal) return;
   const isProgressTarget = Boolean(event.target.closest("#seek, .time-row, .time-pill, .scrub"));
-  if (isProgressTarget || event.shiftKey) {
+  if (!state.isLive && (isProgressTarget || event.shiftKey)) {
     event.preventDefault();
     noteChromeActivity();
     const delta = event.deltaY !== 0 ? Math.sign(event.deltaY) * -1 : Math.sign(event.deltaX);

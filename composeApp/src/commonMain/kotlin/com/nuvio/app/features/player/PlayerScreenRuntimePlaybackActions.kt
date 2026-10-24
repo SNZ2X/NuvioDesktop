@@ -10,7 +10,6 @@ import com.nuvio.app.features.tracking.TrackingScrobbleEvent
 import com.nuvio.app.features.tracking.buildTrackingMediaReference
 import com.nuvio.app.features.watchprogress.WatchProgressClock
 import com.nuvio.app.features.watchprogress.WatchProgressPlaybackSession
-import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import com.nuvio.app.features.watching.domain.isShortPlaceholderDuration
 import kotlinx.coroutines.NonCancellable
@@ -133,8 +132,9 @@ internal fun PlayerScreenRuntime.resetIdentityStateIfNeeded() {
         initialLoadCompleted = false
         speedBoostRestoreSpeed = null
         isHoldToSpeedGestureActive = false
-        initialSeekApplied = activeInitialPositionMs <= 0L &&
-            (activeInitialProgressFraction == null || activeInitialProgressFraction!! <= 0f)
+        initialSeekApplied = !shouldReadResumePosition ||
+            (activeInitialPositionMs <= 0L &&
+                (activeInitialProgressFraction == null || activeInitialProgressFraction!! <= 0f))
         lastProgressPersistEpochMs = 0L
         previousIsPlaying = false
         pendingSeekScrobbleRestart = false
@@ -220,6 +220,7 @@ internal fun PlayerScreenRuntime.currentTrackingMedia(): TrackingMediaReference 
     snapshotTrackingScrobbleItemInputs().buildMedia()
 
 internal fun PlayerScreenRuntime.emitTrackingScrobbleStart() {
+    if (!shouldScrobblePlayback) return
     if (isShortPlaceholderDuration(playbackSnapshot.durationMs)) return
     if (hasRequestedScrobbleStartForCurrentItem) return
     hasRequestedScrobbleStartForCurrentItem = true
@@ -266,6 +267,7 @@ private fun PlayerScreenRuntime.emitTrackingScrobbleTerminal(
     action: TrackingScrobbleAction,
     progressPercent: Float?,
 ) {
+    if (!shouldScrobblePlayback) return
     if (isShortPlaceholderDuration(playbackSnapshot.durationMs)) return
     val provided = progressPercent
     if (!hasRequestedScrobbleStartForCurrentItem && (provided ?: 0f) < 80f) return
@@ -316,6 +318,7 @@ internal fun shouldUpdateTrackingScrobbleAfterSeek(
 ): Boolean = hasActiveScrobble && progressPercent >= 1f && progressPercent < 80f
 
 internal fun PlayerScreenRuntime.emitTrackingSeekScrobbleStart() {
+    if (!shouldScrobblePlayback) return
     if (isShortPlaceholderDuration(playbackSnapshot.durationMs)) return
     val mediaSnapshot = currentTrackingMedia
     val inputsSnapshot = snapshotTrackingScrobbleItemInputs()
@@ -362,28 +365,34 @@ internal suspend fun PlayerScreenRuntime.resolveParentalGuideImdbId(): String? {
 internal fun PlayerScreenRuntime.flushWatchProgress(
     scrobbleAction: TrackingScrobbleAction = TrackingScrobbleAction.STOP,
 ) {
-    when (scrobbleAction) {
-        TrackingScrobbleAction.PAUSE -> emitTrackingScrobblePause()
-        TrackingScrobbleAction.STOP -> emitStopScrobbleForCurrentProgress()
-        TrackingScrobbleAction.START -> Unit
+    if (shouldScrobblePlayback) {
+        when (scrobbleAction) {
+            TrackingScrobbleAction.PAUSE -> emitTrackingScrobblePause()
+            TrackingScrobbleAction.STOP -> emitStopScrobbleForCurrentProgress()
+            TrackingScrobbleAction.START -> Unit
+        }
     }
-    WatchProgressRepository.flushPlaybackProgress(
+    if (!shouldPersistPlaybackProgress) return
+    progressWriter.flush(
         session = playbackSession,
         snapshot = playbackSnapshot,
     )
 }
 
 internal fun PlayerScreenRuntime.scheduleProgressSyncAfterSeek() {
+    if (!shouldPersistPlaybackProgress) return
     val shouldRestartScrobbleAfterSeek = shouldPlay || playbackSnapshot.isPlaying
     seekProgressSyncJob?.cancel()
     seekProgressSyncJob = scope.launch {
         delay(PlayerSeekProgressSyncDebounceMs)
         if (isShortPlaceholderDuration(playbackSnapshot.durationMs)) return@launch
-        WatchProgressRepository.upsertPlaybackProgress(
+        progressWriter.persist(
             session = playbackSession,
             snapshot = playbackSnapshot,
+            syncRemote = true,
         )
 
+        if (!shouldScrobblePlayback) return@launch
         val progressPercent = currentPlaybackProgressPercent()
         if (
             !shouldUpdateTrackingScrobbleAfterSeek(
@@ -427,10 +436,11 @@ internal fun PlayerScreenRuntime.scheduleProgressSyncAfterSeek() {
 }
 
 internal fun PlayerScreenRuntime.persistPlaybackProgressTick() {
+    if (!shouldPersistPlaybackProgress) return
     val now = WatchProgressClock.nowEpochMs()
     if (now - lastProgressPersistEpochMs < PlaybackProgressPersistIntervalMs) return
     lastProgressPersistEpochMs = now
-    WatchProgressRepository.upsertPlaybackProgress(
+    progressWriter.persist(
         session = playbackSession,
         snapshot = playbackSnapshot,
         syncRemote = false,
@@ -443,7 +453,9 @@ internal val AndroidPlaybackEngine.switchTarget: AndroidPlaybackEngine
 internal fun PlayerScreenRuntime.switchPlaybackEngine() {
     val target = playerController?.playbackEngine?.switchTarget ?: return
     flushWatchProgress()
-    if (initialSeekApplied) {
+    // Engine switching rebuilds the surface at the current position. Live has no resume point, so
+    // never carry a tuner position into the replacement engine.
+    if (initialSeekApplied && shouldReadResumePosition) {
         activeInitialPositionMs = playbackSnapshot.positionMs.coerceAtLeast(0L)
         activeInitialProgressFraction = null
     }

@@ -505,6 +505,7 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
 }
 
 internal fun PlayerScreenRuntime.openSourcesPanel() {
+    if (isLive) return
     val vid = activeVideoId ?: return
     PlayerStreamsRepository.loadSources(
         type = contentType ?: parentMetaType,
@@ -518,6 +519,7 @@ internal fun PlayerScreenRuntime.openSourcesPanel() {
 }
 
 internal fun PlayerScreenRuntime.openEpisodesPanel() {
+    if (isLive) return
     if (playerMetaVideos.isEmpty()) {
         scope.launch {
             playerMetaVideos = MetaDetailsRepository.fetch(parentMetaType, parentMetaId)?.videos ?: emptyList()

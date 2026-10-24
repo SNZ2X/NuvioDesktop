@@ -47,6 +47,9 @@ internal fun PlayerScreen(
     launchId: Long? = null,
     sourceFilename: String? = null,
     stream: com.nuvio.app.features.streams.StreamItem? = null,
+    isLive: Boolean = false,
+    onPreviousChannel: (() -> Unit)? = null,
+    onNextChannel: (() -> Unit)? = null,
 ) {
     PlayerScreenContent(
         PlayerScreenArgs(
@@ -91,6 +94,9 @@ internal fun PlayerScreen(
             sourceFilename = sourceFilename,
             onOpenPartyMedia = onOpenPartyMedia,
             stream = stream,
+            isLive = isLive,
+            onPreviousChannel = onPreviousChannel,
+            onNextChannel = onNextChannel,
         )
     )
 }

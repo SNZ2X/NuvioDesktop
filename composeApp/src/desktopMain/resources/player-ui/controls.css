@@ -1640,6 +1640,43 @@ button:disabled {
   display: none;
 }
 
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-bottom: 8px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #e5484d;
+  color: #fff;
+  font-size: var(--meta);
+  font-weight: 700;
+  letter-spacing: .5px;
+  line-height: 1.4;
+}
+
+.live-badge[hidden] {
+  display: none;
+}
+
+.live-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.player.is-live .scrub,
+.player.is-live .time-row,
+.player.is-live .time-pill {
+  display: none;
+}
+
+.player.is-live .action-row {
+  margin-top: 4px;
+}
+
 .action-row {
   margin-top: 16px;
   display: flex;

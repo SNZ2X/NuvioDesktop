@@ -53,6 +53,7 @@ internal fun Modifier.playerSurfaceDragGestures(
     isHoldToSpeedGestureActiveState: State<Boolean>,
     currentPositionMsState: State<Long>,
     currentDurationMsState: State<Long>,
+    horizontalSeekEnabledState: State<Boolean>,
     deactivateHoldToSpeedState: State<() -> Unit>,
     showHorizontalSeekPreviewState: State<(Long, Long) -> Unit>,
     showBrightnessFeedbackState: State<(Float) -> Unit>,
@@ -126,7 +127,8 @@ internal fun Modifier.playerSurfaceDragGestures(
                         height * PlayerVerticalGestureMinHeightFraction,
                     )
                     val horizontalDominant =
-                        !holdToSpeedActive &&
+                        horizontalSeekEnabledState.value &&
+                            !holdToSpeedActive &&
                             abs(totalDx) > viewConfiguration.touchSlop &&
                             abs(totalDx) > abs(totalDy)
                     val verticalDominant =

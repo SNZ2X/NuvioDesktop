@@ -1,0 +1,8 @@
+<resources>
+    <string name="player_live_badge">LIVE</string>
+    <string name="player_live_previous_channel">Previous channel</string>
+    <string name="player_live_next_channel">Next channel</string>
+    <string name="player_live_channel_error">This live channel could not be played.</string>
+    <string name="player_live_release_error">The player could not finish shutting down. Try Back again, or restart Nuvio.</string>
+    <string name="player_live_retry">Retry</string>
+</resources>

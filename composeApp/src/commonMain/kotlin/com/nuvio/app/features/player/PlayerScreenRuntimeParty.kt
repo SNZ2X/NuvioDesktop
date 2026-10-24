@@ -93,10 +93,10 @@ internal val PlayerScreenRuntime.partyKey: String
     get() = partyMediaKey(parentMetaType, parentMetaId, activeSeasonNumber, activeEpisodeNumber)
 
 internal val PlayerScreenRuntime.isPartySynced: Boolean
-    get() = PartyRepository.state.value.party?.media?.key == partyKey
+    get() = !isLive && PartyRepository.state.value.party?.media?.key == partyKey
 
 internal val PlayerScreenRuntime.isPartyControlLocked: Boolean
-    get() = PartyRepository.state.value.party?.let { party -> !party.canControl && party.media.key == partyKey } == true
+    get() = !isLive && PartyRepository.state.value.party?.let { party -> !party.canControl && party.media.key == partyKey } == true
 
 internal fun PlayerScreenRuntime.partyBlocksControl(): Boolean {
     if (!isPartyControlLocked) return false
@@ -294,12 +294,16 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
         // System controls follow the same party rules as the in-player controls.
         source?.setSystemControlHandler(object : PlayerSystemControlHandler {
             override fun handleSetPlaying(playing: Boolean): Boolean {
+                if (isLive) return false // Pause/play stays useful for a tuner.
                 if (!isPartySynced) return false
                 setPlaybackPlaying(playing)
                 return true
             }
 
             override fun handleSeekTo(positionMs: Long): Boolean {
+                // System controls (PiP/now-playing) are a third seek entry point. Live claims the
+                // event so the platform player never performs an unbounded tuner seek.
+                if (isLive) return !shouldSeekPlayback
                 if (!isPartySynced) return false
                 val targetMs = if (isPartyControlLocked) ownSeekTarget(positionMs) else positionMs
                 if (targetMs != null) {
@@ -311,6 +315,7 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
             }
 
             override fun handleSeekBy(offsetMs: Long): Boolean {
+                if (isLive) return !shouldSeekPlayback
                 if (!isPartySynced) return false
                 this@BindPartyEffects.seekBy(offsetMs)
                 return true

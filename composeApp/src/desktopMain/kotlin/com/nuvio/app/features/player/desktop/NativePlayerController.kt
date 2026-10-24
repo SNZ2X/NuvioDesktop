@@ -285,7 +285,10 @@ internal class NativePlayerController(
         // Resolving the AWT peer must happen on the EDT; everything after it must not.
         val hostViewPtr = runCatching { resolveHostView() }
             .getOrElse { error ->
-                log.w(error) { "attach failed to resolve host source=${pending.sourceUrl.toPlaybackLogKey()}" }
+                log.w {
+                    "attach failed to resolve host source=${pending.sourceUrl.toPlaybackLogKey()} " +
+                        formatPlaybackFailureForLog(error)
+                }
                 if (!releaseRequested && pendingSource === pending) pending.onError(error.message)
                 return
             }
@@ -358,7 +361,10 @@ internal class NativePlayerController(
                         applyPendingSubtitleSettings()
                     }
                 }.onFailure { error ->
-                    log.w(error) { "attach failed source=${pending.sourceUrl.toPlaybackLogKey()}" }
+                    log.w {
+                        "attach failed source=${pending.sourceUrl.toPlaybackLogKey()} " +
+                            formatPlaybackFailureForLog(error)
+                    }
                     SwingUtilities.invokeLater {
                         if (!releaseRequested && pendingSource === pending) pending.onError(error.message)
                     }
@@ -1131,6 +1137,27 @@ internal class NativePlayerController(
     }
 }
 
+/**
+ * Live IPTV sources embed credentials in the URL path or query. Keep the failure class and a
+ * redacted message so [[toPlaybackLogKey]] call sites cannot leak the stream URL through an
+ * exception's text, and never hand the raw [Throwable] to the logger.
+ */
+private fun formatPlaybackFailureForLog(error: Throwable): String =
+    "cause=${error.javaClass.simpleName} message=${error.message.redactPlaybackUrlsForLog()}"
+
+private val playbackUrlPattern = Regex("""(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>]+""")
+
+internal fun String?.redactPlaybackUrlsForLog(): String {
+    val raw = this?.takeIf { it.isNotBlank() } ?: return "none"
+    return raw.replace(playbackUrlPattern) { match ->
+        val value = match.value
+        val scheme = value.substringBefore("://")
+        val authority = value.substringAfter("://")
+            .substringBefore('/').substringBefore('?').substringBefore('#').substringAfterLast('@')
+        "$scheme://$authority/[redacted]"
+    }
+}
+
 private fun String.toPlaybackLogKey(): String {
     val scheme = substringBefore(':', missingDelimiterValue = "unknown")
         .takeIf { it.isNotBlank() }
@@ -1238,6 +1265,9 @@ private fun String.toPlayerControlsAction(): PlayerControlsAction? =
         "keyboardSeekForward" -> PlayerControlsAction.KeyboardSeekForward
         "keyboardVolumeDown" -> PlayerControlsAction.KeyboardVolumeDown
         "keyboardVolumeUp" -> PlayerControlsAction.KeyboardVolumeUp
+        "previousChannel" -> PlayerControlsAction.PreviousChannel
+        "nextChannel" -> PlayerControlsAction.NextChannel
+        "retry" -> PlayerControlsAction.Retry
         "pictureInPicture", "pip" -> PlayerControlsAction.PictureInPicture
         "resize" -> PlayerControlsAction.ResizeMode
         "speed" -> PlayerControlsAction.Speed
@@ -1546,6 +1576,22 @@ private fun PlayerControlsState.toControlsJson(isFullscreen: Boolean, onImageRea
         appendJsonField("showEpisodes", showEpisodes)
         append(',')
         appendJsonField("showExternalPlayer", showExternalPlayer)
+        append(',')
+        appendJsonField("isLive", isLive)
+        append(',')
+        appendJsonField("liveBadgeLabel", liveBadgeLabel)
+        append(',')
+        appendJsonField("previousChannelLabel", previousChannelLabel)
+        append(',')
+        appendJsonField("nextChannelLabel", nextChannelLabel)
+        append(',')
+        appendJsonField("showPreviousChannel", showPreviousChannel)
+        append(',')
+        appendJsonField("showNextChannel", showNextChannel)
+        append(',')
+        appendJsonField("showRetry", showRetry)
+        append(',')
+        appendJsonField("retryLabel", retryLabel)
         append(',')
         appendJsonField("durationMs", durationMs)
         append(',')
