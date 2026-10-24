@@ -192,6 +192,25 @@ class LiveTvRepositoryTest {
     }
 
     @Test
+    fun sourceFailuresDistinguishDownloadLimitsFromRejectedAccountsWithoutLeakingDetails() = runBlocking {
+        val cases = listOf(
+            LIVE_TV_TOO_LARGE to LiveTvRepositoryMessages.SourceTooLarge,
+            XTREAM_AUTH_FAILED to LiveTvRepositoryMessages.AccountRejected,
+            "failed https://user:secret@provider.test/list" to LiveTvRepositoryMessages.SourceFailed,
+        )
+        for ((failure, expected) in cases) {
+            val loader = object : LiveTvDocumentLoader {
+                override suspend fun load(location: String, maxBytes: Int, allowLocalFiles: Boolean): LiveTvDocument =
+                    throw LiveTvLoadException(failure)
+            }
+            val repo = repository(FakeStore(listOf(source())), loader)
+            repo.load()
+            assertEquals(expected, repo.uiState.value.sourceErrors["playlist"])
+            assertFalse(repo.uiState.value.isLoading)
+        }
+    }
+
+    @Test
     fun guideFailureKeepsChannelsAndPreviousProgrammes() = runBlocking {
         val store = FakeStore(listOf(source()))
         val loader = FakeLoader(

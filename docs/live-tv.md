@@ -67,8 +67,8 @@ process running as the same user can read both the key and source files. The
 encryption protects against accidentally exposing the source file by itself.
 Account-data reset clears IPTV configuration and invalidates loaded repositories.
 
-Fetching and parsing are bounded: channel playlists and Xtream JSON are limited
-to 16 MiB; decoded XMLTV data to 64 MiB. XML external entities and DTDs are
+Fetching and parsing are bounded: channel playlists are limited to 16 MiB;
+Xtream JSON catalogs and decoded XMLTV data to 64 MiB. XML external entities and DTDs are
 disabled. Provider failures are shown without raw credentialed URLs.
 
 ## Contribution status

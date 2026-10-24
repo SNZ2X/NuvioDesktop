@@ -47,8 +47,8 @@ navigation remains unchanged.
 **Scope:** Desktop ingestion/storage/UI; shared screen boundary and player live
 policy required by desktop. No unrelated maintenance or styling changes.
 
-**Verification:** Desktop and shared metadata compile. All 113 added tests pass.
-The full desktop suite has 1,754 cases, four failures and one skip: the same
+**Verification:** Desktop and shared metadata compile. All 115 added tests pass.
+The full desktop suite has 1,756 cases, four failures and one skip: the same
 failure cases/messages as the untouched upstream baseline. No existing tests were
 removed. See the validation details and actual Compose screenshots below.
 
@@ -96,7 +96,7 @@ node --check composeApp/src/desktopMain/resources/player-ui/controls.js
 
 Desktop compilation and common metadata compilation passed. The full desktop
 command exits nonzero for the **four unchanged baseline failures** listed above:
-**1,754 cases, 1,749 passed, 4 failed, 1 skipped**. All **113 added cases passed**,
+**1,756 cases, 1,751 passed, 4 failed, 1 skipped**. All **115 added cases passed**,
 with zero removed existing cases. Comparison included failure messages, not just
 counts. The native Linux `frame_copy_test` passed. Machine-readable evidence:
 [iptv-desktop-tests.json](validation/iptv-desktop-tests.json).
@@ -111,7 +111,8 @@ Coverage includes:
 - Parser fixtures for M3U BOM/CRLF, attributes, headers, relative URLs, duplicate
   identities and unsupported/HLS documents; XMLTV offsets, entity/DTD rejection,
   programme windows and bounds; Xtream authentication, credential encoding,
-  categories, formats and duplicate stream IDs.
+  categories, formats, duplicate stream IDs and gzip catalogs above the 16 MiB
+  channel-playlist limit (Xtream catalogs have a separate 64 MiB cap).
 - Actual local HTTP server + CIO importing a redirected M3U and gzip XMLTV,
   importing Xtream, restoring encrypted configuration, disabling and removing
   sources, and keeping reused EPG IDs separate between sources.
@@ -152,8 +153,10 @@ The password fixture in the editor is synthetic and visually masked.
 
 Windows/macOS native runtime, file dialogs/ACLs, installers and packaging have
 not been exercised here. iOS builds need macOS; shared metadata compilation is
-not a substitute. No private provider account or end-to-end native IPTV video
-playback was tested. Before release, use an authorized provider/test stream to
+not a substitute. A read-only smoke check against a saved provider source passed authentication
+and imported its live catalog through the actual CIO/Xtream client after the
+large-catalog fix. Provider payloads and credentials are not included in this
+repository. End-to-end native IPTV video playback has not been tested. Before release, use an authorized provider/test stream to
 verify initial playback, channel switching, pause/tracks/fullscreen, errors,
 Retry and Back on each supported desktop OS. These are recorded limits, not
 claims of coverage. Run the app with `./gradlew :composeApp:run`.

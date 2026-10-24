@@ -20,6 +20,8 @@ internal object LiveTvRepositoryMessages {
     const val TooManySources = "Too many Live TV sources."
     const val InvalidSource = "This source is not valid."
     const val SourceFailed = "This source could not be refreshed."
+    const val SourceTooLarge = "This source exceeds the supported size limit."
+    const val AccountRejected = "The provider rejected this account."
     const val EpgFailed = "Guide data could not be loaded."
 }
 
@@ -237,16 +239,25 @@ internal class LiveTvRepository(
                 continue
             }
 
+            var failureMessage = LiveTvRepositoryMessages.SourceFailed
             val result = try {
                 withContext(dispatcher) { fetchSource(source) }
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (error: Throwable) {
+                // Keep actionable known reasons without exposing provider bodies or URLs.
+                if (error is LiveTvLoadException) {
+                    failureMessage = when (error.message) {
+                        LIVE_TV_TOO_LARGE -> LiveTvRepositoryMessages.SourceTooLarge
+                        XTREAM_AUTH_FAILED -> LiveTvRepositoryMessages.AccountRejected
+                        else -> LiveTvRepositoryMessages.SourceFailed
+                    }
+                }
                 null
             }
 
             if (result == null) {
-                nextErrors[source.id] = LiveTvRepositoryMessages.SourceFailed
+                nextErrors[source.id] = failureMessage
                 // Keep the last usable channels (and their guide) for this source.
                 previousChannels[source.id]?.let(nextChannels::addAll)
                 continue

@@ -15,14 +15,14 @@
     "skipped": 1
   },
   "feature": {
-    "total": 1754,
-    "passed": 1749,
+    "total": 1756,
+    "passed": 1751,
     "failed": 4,
     "skipped": 1
   },
   "added": {
-    "total": 113,
-    "passed": 113,
+    "total": 115,
+    "passed": 115,
     "failed": 0,
     "skipped": 0
   },
@@ -69,7 +69,8 @@
   "notCovered": [
     "Windows/macOS native runtime and packaging",
     "iOS compilation on macOS",
-    "private/real IPTV provider compatibility",
+    "Compatibility across additional IPTV providers",
     "end-to-end native video playback of an IPTV source"
-  ]
+  ],
+  "providerAuthAndCatalogSmokeTest": "passed; read-only actual CIO/Xtream client, no credentials or provider payloads retained in repository"
 }

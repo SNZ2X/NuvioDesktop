@@ -29,7 +29,8 @@ import kotlin.time.Duration.Companion.seconds
 internal object LiveTvLimits {
     const val PLAYLIST_BYTES: Int = 16 * 1024 * 1024
     const val XMLTV_BYTES: Int = 64 * 1024 * 1024
-    const val JSON_BYTES: Int = 16 * 1024 * 1024
+    // Large Xtream catalogs can exceed the smaller channel-playlist budget.
+    const val JSON_BYTES: Int = 64 * 1024 * 1024
 }
 
 /** Fixed, credential-free failure text. Never build a message from a source location. */

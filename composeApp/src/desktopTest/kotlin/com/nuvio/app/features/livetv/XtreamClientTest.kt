@@ -7,7 +7,10 @@ import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
+import java.io.ByteArrayOutputStream
+import java.util.zip.GZIPOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -129,6 +132,33 @@ class XtreamClientTest {
         assertEquals("News", channel.group, "the first category wins consistently")
         panel.streams = """[{"stream_id":42,"name":"News HD","category_id":"1"}]"""
         assertEquals(channel.id, clientFor(panel).load(source).channels.single().id)
+    }
+
+    @Test
+    fun compressedCatalogAbovePlaylistLimitStillImportsChannels() = runTest {
+        // Large panels can return >16 MiB of JSON even when their gzip transfer is small.
+        val catalog = "[" + " ".repeat(LiveTvLimits.PLAYLIST_BYTES) +
+            """{"stream_id":7,"name":"Large panel channel"}]"""
+        val gzip = ByteArrayOutputStream().also { output ->
+            GZIPOutputStream(output).use { it.write(catalog.encodeToByteArray()) }
+        }.toByteArray()
+        val http = HttpClient(MockEngine { request ->
+            when (request.url.parameters["action"]) {
+                "get_live_streams" -> respond(
+                    ByteReadChannel(gzip),
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentEncoding, "gzip"),
+                )
+                "get_live_categories" -> respond("[]")
+                else -> respond("""{"user_info":{"auth":1,"status":"Active"}}""")
+            }
+        }) { followRedirects = false }
+        try {
+            val channel = XtreamClient(LiveTvHttpLoader(http)).load(source).channels.single()
+            assertEquals("Large panel channel", channel.name)
+        } finally {
+            http.close()
+        }
     }
 
     @Test

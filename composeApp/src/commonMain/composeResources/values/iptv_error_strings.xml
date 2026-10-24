@@ -2,4 +2,6 @@
     <string name="iptv_notice_saved_sources_unreadable">Your saved Live TV sources could not be read.</string>
     <string name="iptv_notice_source_refresh_failed">Could not refresh this source. Check its settings and try again.</string>
     <string name="iptv_notice_guide_failed">Guide data could not be loaded. Channels are still available.</string>
+    <string name="iptv_notice_source_too_large">This source exceeds the supported download size. Contact your provider for a smaller channel list.</string>
+    <string name="iptv_notice_account_rejected">The provider rejected this account. Check your credentials and subscription status.</string>
 </resources>
