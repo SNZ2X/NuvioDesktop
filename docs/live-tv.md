@@ -43,8 +43,19 @@ subscription, provider account or channel playlist.
 
 ## Browsing and playback
 
-Search channel names and filter by source or group. Channel rows show current
-and upcoming programmes when available; **Guide** shows programme times and
+Choose a source or group from the left-hand list. Expand or collapse a source with
+its chevron, and use the group search to find a category in a large playlist.
+**All channels** shows channels from your visible groups across enabled sources.
+Search channel names in the main pane.
+
+**Manage groups** lets you hide categories you do not use. Uncheck a group to hide
+it or use **Hide listed** / **Show listed** for every group matching the dialog's
+search. Hidden groups and their channels stay out of browsing, the guide, channel
+search and the previous/next playback list. Return to **Manage groups** to restore
+them. Choices are saved locally for each profile; identically named groups in
+different sources are independent. New groups are visible by default.
+
+Channel rows show current and upcoming programmes when available; **Guide** shows programme times and
 details. Selecting a channel opens the existing native player. Channel URLs and
 headers are captured at launch; source edits apply on the next launch.
 
@@ -52,8 +63,8 @@ Live sessions show a **LIVE** indicator and omit VOD resume, watched-state,
 scrobbling, seeking, skip intervals and episode automation. Pause, volume,
 tracks, fullscreen, retry and back controls remain available. Previous/next
 channel controls, including Page Up/Down, cycle through the filtered channel
-list used to start playback. A single-channel list has no switching controls. If native shutdown fails, playback
-Retry is withheld while its host is retained; try Back again or restart the app.
+list used to start playback. A single-channel list has no switching controls. If native shutdown fails,
+playback Retry is withheld while its host is retained; try Back again or restart the app.
 
 ## Local storage
 

@@ -1,0 +1,17 @@
+<resources>
+    <string name="iptv_groups_title">Groups</string>
+    <string name="iptv_groups_manage">Manage groups</string>
+    <string name="iptv_groups_all_channels">All channels</string>
+    <string name="iptv_groups_ungrouped">Ungrouped</string>
+    <string name="iptv_groups_search">Search groups</string>
+    <string name="iptv_groups_show_listed">Show listed</string>
+    <string name="iptv_groups_hide_listed">Hide listed</string>
+    <string name="iptv_groups_hint">Choose the groups you want to see. Hidden groups can be restored here.</string>
+    <string name="iptv_groups_empty">No groups match this search.</string>
+    <string name="iptv_groups_expand_source">Expand groups for %1$s</string>
+    <string name="iptv_groups_collapse_source">Collapse groups for %1$s</string>
+    <plurals name="iptv_groups_channel_count">
+        <item quantity="one">%1$d channel</item>
+        <item quantity="other">%1$d channels</item>
+    </plurals>
+</resources>

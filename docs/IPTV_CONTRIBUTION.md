@@ -12,9 +12,9 @@ Third-party addons can expose streams but do not provide a native source manager
 or a programme guide. Live sessions also need explicit playback semantics so
 they do not become VOD resume/watched/scrobble records.
 
-**Proposal:** Add a desktop Live TV entry with searchable channels, source/group
-filters, logos, now/next information and a programme guide. Allow multiple M3U
-URLs, local M3U files and Xtream Codes sources, with optional XMLTV programme
+**Proposal:** Add a desktop Live TV entry with searchable channels,
+a source/group sidebar, logos, now/next information and a programme guide.
+Hide unused groups per profile and restore them in a searchable group manager. Allow multiple M3U URLs, local M3U files and Xtream Codes sources, with optional XMLTV programme
 data and individual enable/disable, edit, delete and refresh controls. Reuse
 the native player with live controls and channel switching.
 
@@ -36,8 +36,8 @@ the proposed scope can be reduced or split according to maintainer direction.
 **Approved issue:** _Add the issue URL and explicit maintainer approval._
 
 Desktop gains a Live TV destination for importing M3U playlists and Xtream live
-channels, managing multiple sources, browsing channels/groups and viewing XMLTV
-programme data. Channel launches reuse the native player with an explicit live
+channels, managing multiple sources, browsing a source/group list, hiding unused
+groups per profile and viewing XMLTV programme data. Channel launches reuse the native player with an explicit live
 policy that excludes resume, watched-state, scrobbling and episode automation.
 
 Source configuration stays local and is encrypted at rest. No source list,
@@ -47,8 +47,8 @@ navigation remains unchanged.
 **Scope:** Desktop ingestion/storage/UI; shared screen boundary and player live
 policy required by desktop. No unrelated maintenance or styling changes.
 
-**Verification:** Desktop and shared metadata compile. All 115 added tests pass.
-The full desktop suite has 1,756 cases, four failures and one skip: the same
+**Verification:** Desktop and shared metadata compile. All 129 added tests pass.
+The full desktop suite has 1,770 cases, four failures and one skip: the same
 failure cases/messages as the untouched upstream baseline. No existing tests were
 removed. See the validation details and actual Compose screenshots below.
 
@@ -96,7 +96,7 @@ node --check composeApp/src/desktopMain/resources/player-ui/controls.js
 
 Desktop compilation and common metadata compilation passed. The full desktop
 command exits nonzero for the **four unchanged baseline failures** listed above:
-**1,756 cases, 1,751 passed, 4 failed, 1 skipped**. All **115 added cases passed**,
+**1,770 cases, 1,765 passed, 4 failed, 1 skipped**. All **129 added cases passed**,
 with zero removed existing cases. Comparison included failure messages, not just
 counts. The native Linux `frame_copy_test` passed. Machine-readable evidence:
 [iptv-desktop-tests.json](validation/iptv-desktop-tests.json).
@@ -124,7 +124,10 @@ Coverage includes:
   Playback Retry is suppressed after failed native shutdown, with Back/restart
   guidance and the host retained until safe release.
 - Actual Compose browse/search/filtered launch, guide, source management and
-  masked source editor; helper cases cover groups and unavailable contexts.
+  masked source editor. Sidebar/visibility cases cover a 900-group search, source
+  selection, matching names in different sources, search-scoped bulk actions,
+  hide-all recovery, hidden playback contexts, profile isolation and preferences
+  restored from a fresh file-backed store.
 - Actual native `controls.html` loaded in a browser: LIVE/channel visibility,
   Page Up/Down channel actions, blocked live arrow seeks and preserved VOD seeks.
   This checks control dispatch, not end-to-end media decoding.
@@ -148,6 +151,10 @@ The password fixture in the editor is synthetic and visually masked.
 | Manage sources | Add Xtream source |
 | --- | --- |
 | ![Sources](screenshots/live-tv-sources.png) | ![Source editor](screenshots/live-tv-source-editor.png) |
+
+| Manage groups | Hidden groups excluded from guide |
+| --- | --- |
+| ![Manage groups](screenshots/live-tv-groups.png) | ![Hidden groups](screenshots/live-tv-hidden-groups.png) |
 
 ### Remaining platform/provider checks
 

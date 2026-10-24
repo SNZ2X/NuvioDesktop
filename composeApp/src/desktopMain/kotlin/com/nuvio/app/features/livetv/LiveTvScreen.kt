@@ -1,12 +1,15 @@
 package com.nuvio.app.features.livetv
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -29,12 +33,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.Chip
-import com.nuvio.app.core.ui.NuvioDropdownChip
-import com.nuvio.app.core.ui.NuvioDropdownOption
+import com.nuvio.app.core.ui.LocalVerticalBarPadding
+import com.nuvio.app.core.ui.withVerticalBar
 import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioLoadingIndicator
 import com.nuvio.app.core.ui.NuvioPrimaryButton
@@ -60,9 +66,10 @@ import nuvio.composeapp.generated.resources.iptv_empty_no_sources_title
 import nuvio.composeapp.generated.resources.iptv_error_generic
 import nuvio.composeapp.generated.resources.iptv_error_sources_partial
 import nuvio.composeapp.generated.resources.iptv_error_title
-import nuvio.composeapp.generated.resources.iptv_filter_all_groups
-import nuvio.composeapp.generated.resources.iptv_filter_all_sources
 import nuvio.composeapp.generated.resources.iptv_loading
+import nuvio.composeapp.generated.resources.iptv_hidden_groups_title
+import nuvio.composeapp.generated.resources.iptv_hidden_groups_subtitle
+import nuvio.composeapp.generated.resources.iptv_hidden_groups_action
 import nuvio.composeapp.generated.resources.iptv_manage_sources
 import nuvio.composeapp.generated.resources.iptv_nav_live_tv
 import nuvio.composeapp.generated.resources.iptv_refresh
@@ -71,7 +78,6 @@ import nuvio.composeapp.generated.resources.iptv_view_channels
 import nuvio.composeapp.generated.resources.iptv_view_guide
 import org.jetbrains.compose.resources.stringResource
 
-private const val AllFilterKey = ""
 private const val LiveTvClockTickMillis = 30_000L
 
 internal enum class LiveTvBrowseMode { CHANNELS, GUIDE }
@@ -94,14 +100,18 @@ internal fun LiveTvScreenContent(
     onPlay: (LiveTvPlaybackRequest) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    groupPreferences: LiveTvGroupPreferences = remember(profileId) { LiveTvGroupPreferences(profileId) },
 ) {
     val state by repository.uiState.collectAsStateWithLifecycle()
+    val hiddenGroupIds by groupPreferences.hiddenGroupIds.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val tokens = MaterialTheme.nuvio
 
     var query by rememberSaveable(profileId) { mutableStateOf("") }
     var sourceFilterId by rememberSaveable(profileId) { mutableStateOf<String?>(null) }
-    var groupFilter by rememberSaveable(profileId) { mutableStateOf<String?>(null) }
+    var selectedGroupId by rememberSaveable(profileId) { mutableStateOf<String?>(null) }
+    var showGroups by rememberSaveable(profileId) { mutableStateOf(false) }
+    var groupSaveFailed by remember { mutableStateOf(false) }
     var modeName by rememberSaveable(profileId) { mutableStateOf(LiveTvBrowseMode.CHANNELS.name) }
     var showSources by rememberSaveable(profileId) { mutableStateOf(false) }
     var actionFailed by remember { mutableStateOf(false) }
@@ -121,42 +131,36 @@ internal fun LiveTvScreenContent(
     val enabledSources = remember(sources) { sources.filter { it.enabled } }
     val sourceNameById = remember(sources) { sources.associate { it.id to it.name } }
     val enabledSourceIds = remember(enabledSources) { enabledSources.map { it.id }.toSet() }
-    val effectiveSourceFilter = sourceFilterId?.takeIf { it in enabledSourceIds }
-    // Enabled-source gate: a disabled source's channels may still be in flight during a refresh.
-    val visibleChannels = remember(state.channels, enabledSourceIds) {
+    // First identify groups from every enabled channel, including hidden and ungrouped ones.
+    val enabledChannels = remember(state.channels, enabledSourceIds) {
         state.channels.filter { it.sourceId in enabledSourceIds }
     }
-    val groups = remember(visibleChannels, effectiveSourceFilter) {
-        visibleChannels
-            .filter { effectiveSourceFilter == null || it.sourceId == effectiveSourceFilter }
-            .liveTvGroups()
+    val groups = remember(enabledChannels) { enabledChannels.liveTvBrowseGroups() }
+    val hiddenGroupKeys = remember(groups, hiddenGroupIds) {
+        groups.filter { it.id in hiddenGroupIds }.mapTo(HashSet()) { it.sourceId to it.name }
     }
-    val effectiveGroupFilter = groupFilter?.takeIf { it in groups }
-    val filteredChannels = remember(visibleChannels, query, effectiveSourceFilter, effectiveGroupFilter) {
-        visibleChannels.applyLiveTvFilters(
-            query = query,
-            sourceId = effectiveSourceFilter,
-            group = effectiveGroupFilter,
-        )
+    val visibleChannels = remember(enabledChannels, hiddenGroupKeys) {
+        enabledChannels.filterNot { (it.sourceId to it.group) in hiddenGroupKeys }
+    }
+    val selectedGroup = remember(groups, selectedGroupId, hiddenGroupIds) {
+        groups.firstOrNull { it.id == selectedGroupId && it.id !in hiddenGroupIds }
+    }
+    val effectiveSourceFilter = selectedGroup?.sourceId ?: sourceFilterId?.takeIf { it in enabledSourceIds }
+    val filteredChannels = remember(visibleChannels, query, effectiveSourceFilter, selectedGroup) {
+        visibleChannels.applyLiveTvFilters(query, effectiveSourceFilter, selectedGroup?.name)
     }
     val filteredIds = remember(filteredChannels) { filteredChannels.map { it.id } }
-    val sourceOptions = remember(enabledSources) {
-        listOf(NuvioDropdownOption(AllFilterKey, "")) +
-            enabledSources.map { NuvioDropdownOption(it.id, it.name) }
+    val groupsHidden = remember(enabledChannels, visibleChannels, effectiveSourceFilter) {
+        enabledChannels.any { effectiveSourceFilter == null || it.sourceId == effectiveSourceFilter } &&
+            visibleChannels.none { effectiveSourceFilter == null || it.sourceId == effectiveSourceFilter }
     }
-    val groupOptions = remember(groups) {
-        listOf(NuvioDropdownOption(AllFilterKey, "")) + groups.map { NuvioDropdownOption(it, it) }
-    }
-    val allSourcesLabel = stringResource(Res.string.iptv_filter_all_sources)
-    val allGroupsLabel = stringResource(Res.string.iptv_filter_all_groups)
-    // Raw saved filters, not the effective ones: a stale filter still deserves a visible reset.
-    val hasFilters = query.isNotBlank() || sourceFilterId != null || groupFilter != null
+    val hasFilters = query.isNotBlank() || sourceFilterId != null || selectedGroupId != null
     val nowMs = rememberLiveTvNowMillis()
 
     val clearFilters: () -> Unit = {
         query = ""
         sourceFilterId = null
-        groupFilter = null
+        selectedGroupId = null
     }
     val refresh: () -> Unit = {
         actionFailed = false
@@ -171,13 +175,16 @@ internal fun LiveTvScreenContent(
         }
     }
     val partialFailures = state.sourceErrors.keys.count { it in enabledSourceIds }
+    val manageGroups = { groupSaveFailed = false; showGroups = true }
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        NuvioScreen(
-            modifier = Modifier.fillMaxSize(),
-            horizontalPadding = desktopPageHorizontalPaddingForWidth(maxWidth.value),
-        ) {
-            stickyHeader {
+    BoxWithConstraints(modifier = modifier.fillMaxSize().background(tokens.colors.background)) {
+        val pagePadding = desktopPageHorizontalPaddingForWidth(maxWidth.value)
+        val contentPadding = PaddingValues(
+            start = pagePadding, end = pagePadding, top = tokens.spacing.screenTop,
+        ).withVerticalBar()
+        val groupListWidth = if (maxWidth < 840.dp) 210.dp else 260.dp
+        CompositionLocalProvider(LocalVerticalBarPadding provides PaddingValues()) {
+            Column(Modifier.fillMaxSize().padding(contentPadding)) {
                 NuvioScreenHeader(
                     title = stringResource(Res.string.iptv_nav_live_tv),
                     onBack = onBack,
@@ -197,79 +204,114 @@ internal fun LiveTvScreenContent(
                         )
                     }
                 }
-            }
-
-            item(key = "controls") {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
-                ) {
-                    NuvioInputField(
-                        value = query,
-                        onValueChange = { query = it },
-                        placeholder = stringResource(Res.string.iptv_search_hint),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    LiveTvFilterControls(
-                        sources = sourceOptions,
+                Row(Modifier.fillMaxWidth().weight(1f).padding(top = NuvioTokens.Space.s12)) {
+                    LiveTvGroupNavigation(
+                        sources = enabledSources,
+                        groups = groups,
+                        hiddenGroupIds = hiddenGroupIds,
                         selectedSourceId = effectiveSourceFilter,
-                        allSourcesLabel = allSourcesLabel,
-                        groups = groupOptions,
-                        selectedGroup = effectiveGroupFilter,
-                        allGroupsLabel = allGroupsLabel,
-                        mode = mode,
-                        onSelectSource = { sourceFilterId = it.takeIf(String::isNotEmpty) },
-                        onSelectGroup = { groupFilter = it.takeIf(String::isNotEmpty) },
-                        onSelectMode = { modeName = it.name },
+                        selectedGroupId = selectedGroup?.id,
+                        onSelect = { sourceId, groupId ->
+                            sourceFilterId = sourceId
+                            selectedGroupId = groupId
+                        },
+                        onManageGroups = manageGroups,
+                        modifier = Modifier.width(groupListWidth).fillMaxHeight(),
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12),
+                    Spacer(Modifier.width(NuvioTokens.Space.s16))
+                    NuvioScreen(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        horizontalPadding = 0.dp,
+                        topPadding = 0.dp,
                     ) {
-                        Text(
-                            text = stringResource(Res.string.iptv_channels_count, filteredChannels.size),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = tokens.colors.textMuted,
-                        )
-                        if (hasFilters) {
-                            LiveTvTextAction(
-                                text = stringResource(Res.string.iptv_clear_filters),
-                                onClick = clearFilters,
-                            )
+                        item(key = "controls") {
+                            Column(
+                                Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
+                            ) {
+                                NuvioInputField(
+                                    value = query,
+                                    onValueChange = { query = it },
+                                    placeholder = stringResource(Res.string.iptv_search_hint),
+                                    modifier = Modifier.fillMaxWidth().testTag("live-tv-channel-search"),
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8)) {
+                                    Chip(
+                                        label = stringResource(Res.string.iptv_view_channels),
+                                        selected = mode == LiveTvBrowseMode.CHANNELS,
+                                        onClick = { modeName = LiveTvBrowseMode.CHANNELS.name },
+                                    )
+                                    Chip(
+                                        label = stringResource(Res.string.iptv_view_guide),
+                                        selected = mode == LiveTvBrowseMode.GUIDE,
+                                        onClick = { modeName = LiveTvBrowseMode.GUIDE.name },
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12)) {
+                                    Text(
+                                        text = stringResource(Res.string.iptv_channels_count, filteredChannels.size),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = tokens.colors.textMuted,
+                                    )
+                                    if (hasFilters) {
+                                        LiveTvTextAction(stringResource(Res.string.iptv_clear_filters), clearFilters)
+                                    }
+                                }
+                                if (partialFailures > 0) {
+                                    Text(
+                                        stringResource(Res.string.iptv_error_sources_partial, partialFailures),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = tokens.colors.warning,
+                                    )
+                                }
+                                if (actionFailed && state.error == null) {
+                                    Text(
+                                        stringResource(Res.string.iptv_error_generic),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = tokens.colors.danger,
+                                    )
+                                }
+                            }
                         }
-                    }
-                    if (partialFailures > 0) {
-                        Text(
-                            text = stringResource(Res.string.iptv_error_sources_partial, partialFailures),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = tokens.colors.warning,
-                        )
-                    }
-                    if (actionFailed && state.error == null) {
-                        Text(
-                            text = stringResource(Res.string.iptv_error_generic),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = tokens.colors.danger,
+                        liveTvChannelFeed(
+                            state = state,
+                            sourceNameById = sourceNameById,
+                            filteredChannels = filteredChannels,
+                            filteredIds = filteredIds,
+                            mode = mode,
+                            nowMs = nowMs,
+                            enabledSourceCount = enabledSources.size,
+                            hasSources = sources.isNotEmpty(),
+                            groupsHidden = groupsHidden,
+                            onPlay = onPlay,
+                            onRefresh = refresh,
+                            onClearFilters = clearFilters,
+                            onManageSources = { showSources = true },
+                            onManageGroups = manageGroups,
                         )
                     }
                 }
             }
-
-            liveTvChannelFeed(
-                state = state,
-                sourceNameById = sourceNameById,
-                filteredChannels = filteredChannels,
-                filteredIds = filteredIds,
-                mode = mode,
-                nowMs = nowMs,
-                enabledSourceCount = enabledSources.size,
-                hasSources = sources.isNotEmpty(),
-                onPlay = onPlay,
-                onRefresh = refresh,
-                onClearFilters = clearFilters,
-                onManageSources = { showSources = true },
-            )
         }
+    }
+
+    if (showGroups) {
+        LiveTvGroupsDialog(
+            sources = enabledSources,
+            groups = groups,
+            hiddenGroupIds = hiddenGroupIds,
+            onHiddenGroupIdsChange = { next ->
+                try {
+                    groupPreferences.setHiddenGroupIds(next)
+                    if (selectedGroupId in next) selectedGroupId = null
+                    groupSaveFailed = false
+                } catch (_: Throwable) {
+                    groupSaveFailed = true
+                }
+            },
+            onDismiss = { showGroups = false },
+            errorMessage = if (groupSaveFailed) stringResource(Res.string.iptv_error_generic) else null,
+        )
     }
 
     if (showSources) {
@@ -284,56 +326,6 @@ internal fun LiveTvScreenContent(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun LiveTvFilterControls(
-    sources: List<NuvioDropdownOption>,
-    selectedSourceId: String?,
-    allSourcesLabel: String,
-    groups: List<NuvioDropdownOption>,
-    selectedGroup: String?,
-    allGroupsLabel: String,
-    mode: LiveTvBrowseMode,
-    onSelectSource: (String) -> Unit,
-    onSelectGroup: (String) -> Unit,
-    onSelectMode: (LiveTvBrowseMode) -> Unit,
-) {
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8),
-        verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8),
-    ) {
-        NuvioDropdownChip(
-            title = allSourcesLabel,
-            label = sources.firstOrNull { it.key == (selectedSourceId ?: AllFilterKey) }?.label
-                ?.takeIf { it.isNotEmpty() }
-                ?: allSourcesLabel,
-            selectedKey = selectedSourceId ?: AllFilterKey,
-            options = sources,
-            enabled = sources.size > 1,
-            onSelected = { onSelectSource(it.key) },
-        )
-        NuvioDropdownChip(
-            title = allGroupsLabel,
-            label = selectedGroup?.takeIf { it.isNotEmpty() } ?: allGroupsLabel,
-            selectedKey = selectedGroup?.takeIf { it.isNotEmpty() } ?: AllFilterKey,
-            options = groups,
-            enabled = groups.size > 1,
-            onSelected = { onSelectGroup(it.key) },
-        )
-        Chip(
-            label = stringResource(Res.string.iptv_view_channels),
-            selected = mode == LiveTvBrowseMode.CHANNELS,
-            onClick = { onSelectMode(LiveTvBrowseMode.CHANNELS) },
-        )
-        Chip(
-            label = stringResource(Res.string.iptv_view_guide),
-            selected = mode == LiveTvBrowseMode.GUIDE,
-            onClick = { onSelectMode(LiveTvBrowseMode.GUIDE) },
-        )
-    }
-}
-
 private fun LazyListScope.liveTvChannelFeed(
     state: LiveTvState,
     sourceNameById: Map<String, String>,
@@ -343,10 +335,12 @@ private fun LazyListScope.liveTvChannelFeed(
     nowMs: Long,
     enabledSourceCount: Int,
     hasSources: Boolean,
+    groupsHidden: Boolean,
     onPlay: (LiveTvPlaybackRequest) -> Unit,
     onRefresh: () -> Unit,
     onClearFilters: () -> Unit,
     onManageSources: () -> Unit,
+    onManageGroups: () -> Unit,
 ) {
     // A failed refresh keeps the previous channels usable; surface the failure without replacing
     // the list the user is browsing. Per-source failures are already reported above.
@@ -402,6 +396,15 @@ private fun LazyListScope.liveTvChannelFeed(
                     },
                 ),
                 onAction = if (hasSources && enabledSourceCount == 0) onManageSources else onRefresh,
+            )
+        }
+
+        groupsHidden -> item(key = "hidden-groups") {
+            LiveTvNotice(
+                title = stringResource(Res.string.iptv_hidden_groups_title),
+                message = stringResource(Res.string.iptv_hidden_groups_subtitle),
+                actionText = stringResource(Res.string.iptv_hidden_groups_action),
+                onAction = onManageGroups,
             )
         }
 

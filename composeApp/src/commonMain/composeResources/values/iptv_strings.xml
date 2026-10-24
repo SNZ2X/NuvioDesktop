@@ -1,8 +1,6 @@
 <resources>
     <string name="iptv_channels_count">%1$d channels</string>
     <string name="iptv_search_hint">Search channels</string>
-    <string name="iptv_filter_all_sources">All sources</string>
-    <string name="iptv_filter_all_groups">All groups</string>
     <string name="iptv_view_channels">Channels</string>
     <string name="iptv_view_guide">Guide</string>
     <string name="iptv_refresh">Refresh channels</string>
@@ -61,4 +59,7 @@
     <string name="iptv_channel_unavailable_title">Channel unavailable</string>
     <string name="iptv_channel_unavailable_message">This channel is no longer available. It may have been removed or disabled.</string>
     <string name="iptv_channel_unavailable_back">Back to channels</string>
+    <string name="iptv_hidden_groups_title">No visible groups</string>
+    <string name="iptv_hidden_groups_subtitle">All groups in this view are hidden. Choose which groups to show.</string>
+    <string name="iptv_hidden_groups_action">Manage groups</string>
 </resources>

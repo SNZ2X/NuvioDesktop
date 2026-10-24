@@ -7,7 +7,7 @@ approval of the feature request required by CONTRIBUTING.md.
 ## Scope and boundaries
 
 - Desktop owns source management, network requests, encrypted storage, M3U and
-  XMLTV parsing, Xtream live categories/streams, channel search/groups and guide.
+  XMLTV parsing, Xtream live categories/streams, channel search, the source/group sidebar, group visibility and guide.
 - `features/livetv/LiveTvPlatform.kt` is the shared screen boundary. Navigation
   carries opaque channel IDs; credentials and stream URLs stay out of route keys.
 - A desktop Live TV navigation entry opens a dedicated browse screen. Source
@@ -76,5 +76,22 @@ old key/ciphertext deletion completes.
 
 Validation covers M3U metadata/headers/duplicates, Xtream URL encoding and
 responses, XMLTV offsets/XXE/gzip limits, encrypted profile isolation and source
-lifecycle, and live/VOD playback policy. See `IPTV_CONTRIBUTION.md` for commands, the untouched upstream comparison,
+lifecycle, and live/VOD playback policy. See `IPTV_CONTRIBUTION.md` for commands,
+the untouched upstream comparison,
 actual Compose screenshots and remaining platform/provider smoke tests.
+
+## Group visibility
+
+The sidebar lazily renders source-qualified groups, including an ungrouped bucket.
+Visibility keys hash the stable source ID and exact group name, so source renames,
+playlist reordering and matching names in other sources do not merge preferences.
+Hidden groups are filtered before channel search, guide rendering and playback
+context construction. The management dialog always includes hidden groups and bulk
+actions apply only to its search results. Hiding the selected group returns to its
+source's visible channels; an all-hidden view offers a direct management action.
+
+Only opaque group IDs are stored in `livetv_group_visibility.properties`, with a
+separate key per profile. This local preference uses the existing desktop storage
+path and is removed by account reset; it does not enter account sync. Preferences
+publish only after a successful storage write. No provider credentials or group
+names are written to the visibility file.

@@ -15,14 +15,14 @@
     "skipped": 1
   },
   "feature": {
-    "total": 1756,
-    "passed": 1751,
+    "total": 1770,
+    "passed": 1765,
     "failed": 4,
     "skipped": 1
   },
   "added": {
-    "total": 115,
-    "passed": 115,
+    "total": 129,
+    "passed": 129,
     "failed": 0,
     "skipped": 0
   },
@@ -63,7 +63,9 @@
     "screenshots/live-tv-channels.png",
     "screenshots/live-tv-guide.png",
     "screenshots/live-tv-sources.png",
-    "screenshots/live-tv-source-editor.png"
+    "screenshots/live-tv-source-editor.png",
+    "screenshots/live-tv-groups.png",
+    "screenshots/live-tv-hidden-groups.png"
   ],
   "intermediateRunNote": "One intermediate full run timed out in unchanged PluginRuntimeDesktopTest concurrent scraper stress test; targeted repeat and final full run passed that test.",
   "notCovered": [
@@ -72,5 +74,13 @@
     "Compatibility across additional IPTV providers",
     "end-to-end native video playback of an IPTV source"
   ],
-  "providerAuthAndCatalogSmokeTest": "passed; read-only actual CIO/Xtream client, no credentials or provider payloads retained in repository"
+  "providerAuthAndCatalogSmokeTest": "passed; read-only actual CIO/Xtream client, no credentials or provider payloads retained in repository",
+  "groupNavigationChecks": [
+    "900-group sidebar search",
+    "source-qualified group selection",
+    "hidden groups excluded from channels/guide/playback context",
+    "hide-all recovery",
+    "search-scoped bulk changes",
+    "profile isolation and restart persistence"
+  ]
 }
