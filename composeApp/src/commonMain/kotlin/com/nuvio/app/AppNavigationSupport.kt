@@ -8,6 +8,7 @@ import com.nuvio.app.features.collection.CollectionEditorRepository
 import com.nuvio.app.features.collection.FolderDetailRepository
 import com.nuvio.app.features.collection.disposeCollectionEditorPage
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.livetv.LiveTvLaunchStore
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.player.ExternalPlayerPlaybackRequest
 import com.nuvio.app.features.player.PlayerLaunch
@@ -49,12 +50,16 @@ internal val navigationSavedStateConfiguration = SavedStateConfiguration {
             subclass(StreamRoute::class, StreamRoute.serializer())
             subclass(CatalogRoute::class, CatalogRoute.serializer())
             subclass(PlayerRoute::class, PlayerRoute.serializer())
+            subclass(LiveTvRoute::class, LiveTvRoute.serializer())
+            subclass(LiveTvPlayerRoute::class, LiveTvPlayerRoute.serializer())
         }
     }
 }
 
 internal fun disposeRouteResources(route: AppRoute) {
     when (route) {
+        is LiveTvPlayerRoute -> LiveTvLaunchStore.remove(route.launchId)
+
         is StreamRoute -> {
             StreamsRepository.clear()
             StreamLaunchStore.remove(route.launchId)

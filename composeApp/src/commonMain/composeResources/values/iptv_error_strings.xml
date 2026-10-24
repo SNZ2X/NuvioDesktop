@@ -1,0 +1,5 @@
+<resources>
+    <string name="iptv_notice_saved_sources_unreadable">Your saved Live TV sources could not be read.</string>
+    <string name="iptv_notice_source_refresh_failed">Could not refresh this source. Check its settings and try again.</string>
+    <string name="iptv_notice_guide_failed">Guide data could not be loaded. Channels are still available.</string>
+</resources>

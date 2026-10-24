@@ -267,7 +267,7 @@ internal fun MainAppContent(
         }
         val currentRoute = navBackStack.lastOrNull() as? AppRoute
         var registeredPlayerSystemBack by remember {
-            mutableStateOf<Pair<PlayerRoute, () -> Unit>?>(null)
+            mutableStateOf<Pair<AppRoute, () -> Unit>?>(null)
         }
         LaunchedEffect(currentRoute, posterNavigationEnabled) {
             val request = posterNavigation.active
@@ -332,7 +332,7 @@ internal fun MainAppContent(
     }.collectAsStateWithLifecycle()
     var visiblePlayerEntries by remember { mutableIntStateOf(0) }
     var streamLandscapeLoadingVisible by remember(currentRoute) { mutableStateOf(false) }
-    if (currentRoute is PlayerRoute || visiblePlayerEntries > 0 || streamLandscapeLoadingVisible) {
+    if (currentRoute is PlayerRoute || currentRoute is LiveTvPlayerRoute || visiblePlayerEntries > 0 || streamLandscapeLoadingVisible) {
         LockPlayerToLandscape()
         HidePlayerSystemBars()
     }
@@ -501,7 +501,7 @@ internal fun MainAppContent(
 
     LaunchedEffect(selectedTab, navBackStack.lastOrNull()) {
         val topRoute = navBackStack.lastOrNull()
-        if (topRoute is PlayerRoute) return@LaunchedEffect
+        if (topRoute is PlayerRoute || topRoute is LiveTvPlayerRoute) return@LaunchedEffect
         val detailTitle = (topRoute as? DetailRoute)?.title
         AppPresenceState.publish(
             if (!detailTitle.isNullOrBlank()) {
@@ -732,14 +732,14 @@ internal fun MainAppContent(
         if (!ownsAppRuntime) return@LaunchedEffect
         if (!initialHomeReady || profileSwitchLoading) return@LaunchedEffect
         if (resumePromptItem != null) return@LaunchedEffect
-        if (currentRoute is StreamRoute || currentRoute is PlayerRoute || currentRoute is PartyRoute) return@LaunchedEffect
+        if (currentRoute is StreamRoute || currentRoute is PlayerRoute || currentRoute is LiveTvPlayerRoute || currentRoute is PartyRoute) return@LaunchedEffect
         if (continueWatchingPreferencesUiState.showResumePromptOnLaunch) {
             resumePromptItem = ResumePromptRepository.consumeResumePrompt()
         }
     }
 
     LaunchedEffect(currentRoute) {
-        val inPlaybackFlow = currentRoute is StreamRoute || currentRoute is PlayerRoute || currentRoute is PartyRoute
+        val inPlaybackFlow = currentRoute is StreamRoute || currentRoute is PlayerRoute || currentRoute is LiveTvPlayerRoute || currentRoute is PartyRoute
         if (inPlaybackFlow) {
             resumePromptItem = null
         }
@@ -1369,7 +1369,7 @@ internal fun MainAppContent(
                     onBack = {
                         val routeAtRequest = navController.currentRoute
                         dispatchNavigationBack(
-                            isPlayerRoute = routeAtRequest is PlayerRoute,
+                            isPlayerRoute = routeAtRequest is PlayerRoute || routeAtRequest is LiveTvPlayerRoute,
                             playerBack = registeredPlayerSystemBack
                                 ?.takeIf { (route, _) -> route == routeAtRequest }
                                 ?.second,
@@ -1543,6 +1543,11 @@ internal fun MainAppContent(
                             }
                         },
                         onTabSelected = ::handleRootTabClick,
+                        onLiveTvClick = {
+                            profileState.activeProfile?.profileIndex?.let { profileId ->
+                                navController.navigate(LiveTvRoute(profileId))
+                            }
+                        },
                         onProfileSelected = { profile ->
                             profileSwitchLoading = true
                             NativeTabBridge.publishTabBarVisible(false)
@@ -1647,6 +1652,30 @@ internal fun MainAppContent(
                         },
                         onOpenPartyMedia = ::openPartyMedia,
                     )
+                }
+                if (isDesktop) {
+                    entry<LiveTvRoute> { route ->
+                        LiveTvDestination(route = route, navController = navController)
+                    }
+                    entry<LiveTvPlayerRoute> { route ->
+                        DisposableEffect(route) {
+                            visiblePlayerEntries += 1
+                            onDispose { visiblePlayerEntries -= 1 }
+                        }
+                        LiveTvPlayerDestination(
+                            route = route,
+                            navController = navController,
+                            onSystemBackHandlerChanged = { handler ->
+                                if (handler == null) {
+                                    if (registeredPlayerSystemBack?.first == route) {
+                                        registeredPlayerSystemBack = null
+                                    }
+                                } else {
+                                    registeredPlayerSystemBack = route to handler
+                                }
+                            },
+                        )
+                    }
                 }
                 entry<CatalogRoute> { route ->
                     CatalogDestination(
@@ -2172,7 +2201,7 @@ internal fun MainAppContent(
 
 private fun AppRoute?.drawsUnderVerticalBar(selectedTab: AppScreenTab): Boolean =
     when (this) {
-        is DetailRoute, is StreamRoute, is PlayerRoute -> true
+        is DetailRoute, is StreamRoute, is PlayerRoute, is LiveTvPlayerRoute -> true
         is TabsRoute -> selectedTab == AppScreenTab.Home || selectedTab == AppScreenTab.Library
         else -> false
     }

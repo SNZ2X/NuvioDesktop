@@ -1,0 +1,174 @@
+# Native IPTV contribution notes
+
+## Feature request draft
+
+**Title:** [Feature]: Desktop Live TV with M3U, Xtream and XMLTV
+
+**Area:** Streams / Sources
+
+**Problem:** Desktop users cannot directly import an IPTV playlist or Xtream
+account, browse its channels and groups, or see current/upcoming programmes.
+Third-party addons can expose streams but do not provide a native source manager
+or a programme guide. Live sessions also need explicit playback semantics so
+they do not become VOD resume/watched/scrobble records.
+
+**Proposal:** Add a desktop Live TV entry with searchable channels, source/group
+filters, logos, now/next information and a programme guide. Allow multiple M3U
+URLs, local M3U files and Xtream Codes sources, with optional XMLTV programme
+data and individual enable/disable, edit, delete and refresh controls. Reuse
+the native player with live controls and channel switching.
+
+Keep source credentials local and encrypted; do not sync IPTV configuration or
+bundle subscriptions/playlists. Keep ingestion and UI in desktop source sets,
+with only the screen bridge and live player policy in shared code. Reuse current
+dependencies and preserve the default VOD behavior.
+
+**Alternatives:** A Stremio addon can supply streams with less app integration,
+but cannot provide this native source and programme-guide workflow. A separate
+IPTV application already provides that workflow but requires leaving Nuvio.
+
+**Contribution plan:** Yes, but implementation/submission remains subject to
+explicit maintainer approval. A local implementation is prepared for evaluation;
+the proposed scope can be reduced or split according to maintainer direction.
+
+## PR description draft (only after approval)
+
+**Approved issue:** _Add the issue URL and explicit maintainer approval._
+
+Desktop gains a Live TV destination for importing M3U playlists and Xtream live
+channels, managing multiple sources, browsing channels/groups and viewing XMLTV
+programme data. Channel launches reuse the native player with an explicit live
+policy that excludes resume, watched-state, scrobbling and episode automation.
+
+Source configuration stays local and is encrypted at rest. No source list,
+credential, subscription service or new dependency is bundled. Non-desktop
+navigation remains unchanged.
+
+**Scope:** Desktop ingestion/storage/UI; shared screen boundary and player live
+policy required by desktop. No unrelated maintenance or styling changes.
+
+**Verification:** Desktop and shared metadata compile. All 113 added tests pass.
+The full desktop suite has 1,754 cases, four failures and one skip: the same
+failure cases/messages as the untouched upstream baseline. No existing tests were
+removed. See the validation details and actual Compose screenshots below.
+
+**Review slices:**
+
+1. Desktop parsers, source repository, encrypted persistence and tests.
+2. Explicit shared live playback policy and regression tests.
+3. Desktop navigation, source/channel/guide UI and playback wrapper.
+
+## Upstream verification baseline
+
+Base: `NuvioMedia/NuvioDesktop`, branch `Dev`, commit
+`897efe93` (fetched 2026-10-24).
+
+Environment: Linux x86_64, JDK 21, repository Gradle wrapper. An empty ignored
+`local.properties` is needed because upstream's `generateRuntimeConfigs` declares
+that file as an input even when no private service configuration is used.
+
+The untouched baseline was checked in a detached checkout, separately from the
+IPTV branch:
+
+```sh
+./gradlew :composeApp:compileKotlinDesktop :composeApp:desktopTest --no-daemon
+```
+
+Desktop compilation passed. Tests: **1,641 run, 4 failed, 1 skipped**.
+Existing failures:
+
+- `CollectionCardRemoteImageTest.animatedImageDoesNotRequireAFileExtension`
+- `CollectionCardRemoteImageTest.animatedGifStillPlaysOnHover`
+- `CollectionCardRemoteImageTest.animatedWebpPlaysOnHoverAndRestoresCoverOnExit`
+- `WatchProgressIdentityTest.legacy payload derives episode progress key and preserves completed position`
+
+The native `frame_copy_test` also passed. iOS compilation and simulator tests
+cannot run on Linux. This baseline does not establish Windows/macOS playback or
+provider compatibility; those require platform/provider testing.
+
+## Implementation validation (2026-10-24)
+
+```sh
+./gradlew :composeApp:compileKotlinDesktop :composeApp:desktopTest --no-daemon
+./gradlew :composeApp:compileCommonMainKotlinMetadata --no-daemon
+node --check composeApp/src/desktopMain/resources/player-ui/controls.js
+```
+
+Desktop compilation and common metadata compilation passed. The full desktop
+command exits nonzero for the **four unchanged baseline failures** listed above:
+**1,754 cases, 1,749 passed, 4 failed, 1 skipped**. All **113 added cases passed**,
+with zero removed existing cases. Comparison included failure messages, not just
+counts. The native Linux `frame_copy_test` passed. Machine-readable evidence:
+[iptv-desktop-tests.json](validation/iptv-desktop-tests.json).
+
+Tests ran with isolated `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` under temporary
+directories; no user provider credentials or personal source files were used.
+One intermediate full run timed out in the unchanged concurrent scraper test
+in `PluginRuntimeDesktopTest`; its targeted rerun and the final full run passed.
+
+Coverage includes:
+
+- Parser fixtures for M3U BOM/CRLF, attributes, headers, relative URLs, duplicate
+  identities and unsupported/HLS documents; XMLTV offsets, entity/DTD rejection,
+  programme windows and bounds; Xtream authentication, credential encoding,
+  categories, formats and duplicate stream IDs.
+- Actual local HTTP server + CIO importing a redirected M3U and gzip XMLTV,
+  importing Xtream, restoring encrypted configuration, disabling and removing
+  sources, and keeping reused EPG IDs separate between sources.
+- Encrypted profile isolation, corruption without overwrite, restrictive
+  permissions, rejected symlinks, source lifecycle and reset races. A gated test
+  proves replacement repositories wait for old credential deletion.
+- Live/VOD policy pairs for resume, seeking, persistence, scrobbling, metadata,
+  release-before-switch, rapid/late callbacks and release-failure handling.
+  Playback Retry is suppressed after failed native shutdown, with Back/restart
+  guidance and the host retained until safe release.
+- Actual Compose browse/search/filtered launch, guide, source management and
+  masked source editor; helper cases cover groups and unavailable contexts.
+- Actual native `controls.html` loaded in a browser: LIVE/channel visibility,
+  Page Up/Down channel actions, blocked live arrow seeks and preserved VOD seeks.
+  This checks control dispatch, not end-to-end media decoding.
+
+Independent static reviews covered data ingestion/persistence/reset and live
+player lifecycle/VOD regressions. Findings fixed: duplicate Xtream IDs could
+crash keyed lists; Retry could target a terminal controller after failed release.
+A second player review verified the correction. The proposed same-URL update
+finding did not reproduce through browse/edit/reopen, which creates a fresh
+runtime; source settings are captured for each playback launch, as documented.
+
+### Actual Compose screenshots
+
+These show synthetic channels and programme data rendered by `LiveTvScreenTest`.
+The password fixture in the editor is synthetic and visually masked.
+
+| Channels | Programme guide |
+| --- | --- |
+| ![Channels](screenshots/live-tv-channels.png) | ![Guide](screenshots/live-tv-guide.png) |
+
+| Manage sources | Add Xtream source |
+| --- | --- |
+| ![Sources](screenshots/live-tv-sources.png) | ![Source editor](screenshots/live-tv-source-editor.png) |
+
+### Remaining platform/provider checks
+
+Windows/macOS native runtime, file dialogs/ACLs, installers and packaging have
+not been exercised here. iOS builds need macOS; shared metadata compilation is
+not a substitute. No private provider account or end-to-end native IPTV video
+playback was tested. Before release, use an authorized provider/test stream to
+verify initial playback, channel switching, pause/tracks/fullscreen, errors,
+Retry and Back on each supported desktop OS. These are recorded limits, not
+claims of coverage. Run the app with `./gradlew :composeApp:run`.
+
+## Final acceptance checklist
+
+- [x] Desktop compiles with the complete IPTV implementation.
+- [x] All new IPTV and live-player tests pass.
+- [x] Full desktop test result compared against the untouched baseline.
+- [x] Independent review findings addressed and checked.
+- [x] Source import/edit/disable/delete and refresh covered by automated tests.
+- [x] Channel search/groups, programme guide and unavailable contexts covered by tests.
+- [x] Channel switching/back/retry release ordering covered by controller tests.
+- [x] Live/VOD progress and scrobble policy covered by regression tests.
+- [x] Screenshots captured from the actual Compose screens and inspected.
+- [x] Platform/provider testing limitations recorded without implying coverage.
+- [ ] Native IPTV video/provider smoke tests completed on supported desktop platforms.
+- [ ] Explicit upstream approval obtained before submission.

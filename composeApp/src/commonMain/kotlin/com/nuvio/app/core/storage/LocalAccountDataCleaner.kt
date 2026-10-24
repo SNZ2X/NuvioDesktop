@@ -17,6 +17,7 @@ import com.nuvio.app.features.membership.MemberAccessRepository
 import com.nuvio.app.features.library.LibraryDisplaySettingsRepository
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepository
 import com.nuvio.app.features.player.PlayerLaunchStore
+import com.nuvio.app.features.livetv.LiveTvLaunchStore
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
@@ -85,6 +86,7 @@ internal object LocalAccountDataCleaner {
         SearchRepository.reset()
         SubtitleRepository.clear()
         PlayerLaunchStore.clear()
+        LiveTvLaunchStore.clear()
         StreamLaunchStore.clear()
         StreamContextStore.clear()
     }

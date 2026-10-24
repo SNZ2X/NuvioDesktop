@@ -34,6 +34,15 @@ sealed interface SettingsDestinationRoute : AppRoute {
 data object TabsRoute : AppRoute
 
 @Serializable
+data class LiveTvRoute(val profileId: Int) : AppRoute
+
+@Serializable
+data class LiveTvPlayerRoute(val launchId: Long) : AppRoute {
+    override val hidesNavigationBar: Boolean
+        get() = true
+}
+
+@Serializable
 data class DetailRoute(
     val type: String,
     val id: String,

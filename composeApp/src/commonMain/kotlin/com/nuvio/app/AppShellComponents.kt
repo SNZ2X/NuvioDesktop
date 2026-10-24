@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -107,6 +108,7 @@ import nuvio.composeapp.generated.resources.compose_nav_library
 import nuvio.composeapp.generated.resources.compose_nav_profile
 import nuvio.composeapp.generated.resources.compose_nav_search
 import nuvio.composeapp.generated.resources.compose_nav_settings
+import nuvio.composeapp.generated.resources.iptv_nav_live_tv
 import nuvio.composeapp.generated.resources.compose_settings_page_root
 import nuvio.composeapp.generated.resources.sidebar_library
 import nuvio.composeapp.generated.resources.sidebar_search
@@ -723,6 +725,7 @@ internal fun DesktopHoverSidebar(
     onTabSelected: (AppScreenTab) -> Unit,
     onProfileSelected: (NuvioProfile) -> Unit,
     onAddProfileRequested: () -> Unit,
+    onLiveTvClick: () -> Unit = {},
     sidebarExpanded: Boolean = false,
     sidebarWidth: Dp = DesktopSidebarCollapsedWidth,
     hoverSource: MutableInteractionSource = remember { MutableInteractionSource() },
@@ -768,7 +771,7 @@ internal fun DesktopHoverSidebar(
             } else {
                 0.dp
             }
-            val navColumnHeight = DesktopSidebarItemHeight * AppScreenTab.entries.size
+            val navColumnHeight = DesktopSidebarItemHeight * (AppScreenTab.entries.size + 1)
             val centeredNavTop = ((maxHeight - navColumnHeight) / 2).coerceAtLeast(0.dp)
             val availableNavOffset = (maxHeight - navColumnHeight - centeredNavTop).coerceAtLeast(0.dp)
             val navColumnOffset = (minNavTop - centeredNavTop)
@@ -856,6 +859,22 @@ internal fun DesktopHoverSidebar(
                     Icon(
                         painter = painterResource(Res.drawable.sidebar_library),
                         contentDescription = stringResource(Res.string.compose_nav_library),
+                        modifier = Modifier.size(DesktopSidebarIconSize),
+                        tint = color,
+                    )
+                }
+                DesktopSidebarItem(
+                    label = stringResource(Res.string.iptv_nav_live_tv),
+                    selected = false,
+                    expanded = sidebarExpanded,
+                    onClick = {
+                        onProfileStackVisibleChange(false)
+                        onLiveTvClick()
+                    },
+                ) { color ->
+                    Icon(
+                        imageVector = Icons.Filled.LiveTv,
+                        contentDescription = stringResource(Res.string.iptv_nav_live_tv),
                         modifier = Modifier.size(DesktopSidebarIconSize),
                         tint = color,
                     )

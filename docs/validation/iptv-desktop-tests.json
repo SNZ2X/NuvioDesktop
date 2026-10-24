@@ -1,0 +1,75 @@
+{
+  "recordedOn": "2026-10-24",
+  "upstreamBase": "897efe93",
+  "environment": {
+    "os": "Linux x86_64",
+    "jdk": "21",
+    "gradle": "9.4.1"
+  },
+  "command": "./gradlew :composeApp:compileKotlinDesktop :composeApp:desktopTest --no-daemon",
+  "desktopCompilation": "passed",
+  "baseline": {
+    "total": 1641,
+    "passed": 1636,
+    "failed": 4,
+    "skipped": 1
+  },
+  "feature": {
+    "total": 1754,
+    "passed": 1749,
+    "failed": 4,
+    "skipped": 1
+  },
+  "added": {
+    "total": 113,
+    "passed": 113,
+    "failed": 0,
+    "skipped": 0
+  },
+  "removedExistingCases": 0,
+  "failureCasesAndMessagesMatchBaseline": true,
+  "failures": [
+    {
+      "class": "com.nuvio.app.features.home.components.CollectionCardRemoteImageTest",
+      "case": "animatedImageDoesNotRequireAFileExtension[desktop]",
+      "message": "java.lang.AssertionError: The focus asset should not load before hover expected:<0> but was:<1>"
+    },
+    {
+      "class": "com.nuvio.app.features.home.components.CollectionCardRemoteImageTest",
+      "case": "animatedGifStillPlaysOnHover[desktop]",
+      "message": "java.lang.AssertionError: The focus asset should not load before hover expected:<0> but was:<1>"
+    },
+    {
+      "class": "com.nuvio.app.features.home.components.CollectionCardRemoteImageTest",
+      "case": "animatedWebpPlaysOnHoverAndRestoresCoverOnExit[desktop]",
+      "message": "java.lang.AssertionError: The focus asset should not load before hover expected:<0> but was:<1>"
+    },
+    {
+      "class": "com.nuvio.app.features.watchprogress.WatchProgressIdentityTest",
+      "case": "legacy payload derives episode progress key and preserves completed position[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be true."
+    }
+  ],
+  "commonMetadataCompilation": "passed",
+  "nativeFrameCopyTest": "passed",
+  "nativeControlsJavaScriptSyntax": "passed",
+  "nativeControlsBrowserChecks": {
+    "liveBadgeAndChannelButtons": "passed",
+    "pageUpDownDispatch": "passed",
+    "liveArrowSeekSuppressed": "passed",
+    "vodArrowSeekPreserved": "passed"
+  },
+  "composeScreenshots": [
+    "screenshots/live-tv-channels.png",
+    "screenshots/live-tv-guide.png",
+    "screenshots/live-tv-sources.png",
+    "screenshots/live-tv-source-editor.png"
+  ],
+  "intermediateRunNote": "One intermediate full run timed out in unchanged PluginRuntimeDesktopTest concurrent scraper stress test; targeted repeat and final full run passed that test.",
+  "notCovered": [
+    "Windows/macOS native runtime and packaging",
+    "iOS compilation on macOS",
+    "private/real IPTV provider compatibility",
+    "end-to-end native video playback of an IPTV source"
+  ]
+}
