@@ -30,6 +30,8 @@ class LiveTvImportIntegrationTest {
         val now = System.currentTimeMillis()
         fun time(offset: Long) = formatter.format(Instant.ofEpochMilli(now + offset))
         val guide = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE tv SYSTEM "$base/xmltv.dtd">
             <tv>
               <programme channel="news" start="${time(-600_000)}" stop="${time(1_200_000)}"><title>World Report</title></programme>
               <programme channel="cinema" start="${time(-600_000)}" stop="${time(3_600_000)}"><title>Evening Cinema</title></programme>

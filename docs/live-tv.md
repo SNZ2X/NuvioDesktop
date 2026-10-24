@@ -49,7 +49,7 @@ its chevron, and use the group search to find a category in a large playlist.
 Search channel names in the main pane.
 
 **Manage groups** lets you hide categories you do not use. Uncheck a group to hide
-it or use **Hide listed** / **Show listed** for every group matching the dialog's
+it or use **Hide all** / **Select all** for every group matching the dialog's
 search. Hidden groups and their channels stay out of browsing, the guide, channel
 search and the previous/next playback list. Return to **Manage groups** to restore
 them. Choices are saved locally for each profile; identically named groups in
@@ -79,8 +79,10 @@ encryption protects against accidentally exposing the source file by itself.
 Account-data reset clears IPTV configuration and invalidates loaded repositories.
 
 Fetching and parsing are bounded: channel playlists are limited to 16 MiB;
-Xtream JSON catalogs and decoded XMLTV data to 64 MiB. XML external entities and DTDs are
-disabled. Provider failures are shown without raw credentialed URLs.
+Xtream JSON catalogs and decoded XMLTV data to 64 MiB. Standard XMLTV document-type
+declarations are supported without loading their DTDs. External entities and
+internal DTD subsets are rejected. Provider failures are shown without raw
+credentialed URLs.
 
 ## Contribution status
 

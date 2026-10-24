@@ -4,9 +4,9 @@
     <string name="iptv_groups_all_channels">All channels</string>
     <string name="iptv_groups_ungrouped">Ungrouped</string>
     <string name="iptv_groups_search">Search groups</string>
-    <string name="iptv_groups_show_listed">Show listed</string>
-    <string name="iptv_groups_hide_listed">Hide listed</string>
-    <string name="iptv_groups_hint">Choose the groups you want to see. Hidden groups can be restored here.</string>
+    <string name="iptv_groups_show_listed">Select all</string>
+    <string name="iptv_groups_hide_listed">Hide all</string>
+    <string name="iptv_groups_hint">Choose the groups you want to see. Hidden groups can be restored here. Select all and Hide all apply only to groups matching the search.</string>
     <string name="iptv_groups_empty">No groups match this search.</string>
     <string name="iptv_groups_expand_source">Expand groups for %1$s</string>
     <string name="iptv_groups_collapse_source">Collapse groups for %1$s</string>

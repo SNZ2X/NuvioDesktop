@@ -16,9 +16,10 @@ internal const val LIVE_TV_XMLTV_UNSAFE: String = "EPG document uses a forbidden
  * Streaming XMLTV parser.
  *
  * Only `channel` and `programme` elements are consumed; everything else is skipped without
- * buffering. DTDs are disabled before the reader is created and any DOCTYPE or external
- * entity reference aborts the parse, so a hostile guide cannot trigger entity expansion or
- * network access. Depth, programme count and text lengths are bounded.
+ * buffering. External DTD loading and entities are disabled before creating the reader.
+ * Standard XMLTV document-type declarations are accepted without loading their DTD;
+ * internal subsets and entity references are rejected. Depth, programme count and text
+ * lengths are bounded.
  */
 internal object XmltvParser {
     private const val WINDOW_BEFORE_MS = 6L * 60 * 60 * 1000
@@ -65,7 +66,14 @@ internal object XmltvParser {
 
             while (reader.hasNext()) {
                 when (reader.next()) {
-                    XMLStreamConstants.DTD -> throw LiveTvParseException(LIVE_TV_XMLTV_UNSAFE)
+                    XMLStreamConstants.DTD -> {
+                        // XMLTV exports commonly declare xmltv.dtd. The disabled DTD/entity
+                        // settings and rejecting resolver prevent loading it; never accept an
+                        // internal subset that could declare entities or defaults.
+                        if (!SAFE_XMLTV_DOCTYPE.matches(reader.text.orEmpty().trim())) {
+                            throw LiveTvParseException(LIVE_TV_XMLTV_UNSAFE)
+                        }
+                    }
                     XMLStreamConstants.ENTITY_REFERENCE -> throw LiveTvParseException(LIVE_TV_XMLTV_UNSAFE)
 
                     XMLStreamConstants.START_ELEMENT -> {
@@ -274,5 +282,8 @@ internal object XmltvParser {
         return null
     }
 
+    private val SAFE_XMLTV_DOCTYPE = Regex(
+        """<!DOCTYPE\s+tv(?:\s+SYSTEM\s+(?:"[^"]*"|'[^']*')|\s+PUBLIC\s+(?:"[^"]*"|'[^']*')\s+(?:"[^"]*"|'[^']*'))?\s*>""",
+    )
     private val WHITESPACE = Regex("\\s+")
 }

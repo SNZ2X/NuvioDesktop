@@ -210,12 +210,18 @@ internal fun LiveTvGroupsDialog(
     ) {
         NuvioInputField(query, { query = it }, stringResource(Res.string.iptv_groups_search))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s16)) {
-            LiveTvTextAction(stringResource(Res.string.iptv_groups_show_listed), {
-                onHiddenGroupIdsChange(hiddenGroupIds - listedIds)
-            })
-            LiveTvTextAction(stringResource(Res.string.iptv_groups_hide_listed), {
-                onHiddenGroupIdsChange(hiddenGroupIds + listedIds)
-            })
+            DialogButton(
+                text = stringResource(Res.string.iptv_groups_show_listed),
+                onClick = { onHiddenGroupIdsChange(hiddenGroupIds - listedIds) },
+                modifier = Modifier.weight(1f),
+                enabled = listed.isNotEmpty(),
+            )
+            DialogButton(
+                text = stringResource(Res.string.iptv_groups_hide_listed),
+                onClick = { onHiddenGroupIdsChange(hiddenGroupIds + listedIds) },
+                modifier = Modifier.weight(1f),
+                enabled = listed.isNotEmpty(),
+            )
         }
         if (listed.isEmpty()) {
             Text(stringResource(Res.string.iptv_groups_empty), color = tokens.colors.textMuted)

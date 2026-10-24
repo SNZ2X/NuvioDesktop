@@ -1,6 +1,9 @@
 package com.nuvio.app.features.livetv
 
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
 import java.io.ByteArrayInputStream
+import java.util.concurrent.atomic.AtomicInteger
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -123,7 +126,37 @@ class XmltvParserTest {
     }
 
     @Test
-    fun doctypeAndExternalEntitiesFailClosed() {
+    fun standardXmltvDocumentTypesAreAcceptedWithoutFetchingTheirExternalSubset() {
+        val requests = AtomicInteger()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/xmltv.dtd") { exchange ->
+            requests.incrementAndGet()
+            exchange.sendResponseHeaders(200, -1)
+            exchange.close()
+        }
+        server.start()
+        try {
+            val dtd = "http://127.0.0.1:${server.address.port}/xmltv.dtd"
+            for (declaration in listOf(
+                "<!DOCTYPE tv>",
+                """<!DOCTYPE tv SYSTEM "$dtd">""",
+                "<!DOCTYPE tv PUBLIC '-//XMLTV//DTD XMLTV//EN' '$dtd'>",
+            )) {
+                val xml = """
+                    <?xml version="1.0" encoding="UTF-8"?>
+                    $declaration
+                    <tv><programme channel="c" start="20260301120000 +0000" stop="20260301130000 +0000"><title>Now</title></programme></tv>
+                """.trimIndent()
+                assertEquals("Now", parse(xml, *channels("lt:c" to "c").toTypedArray())["lt:c"]?.single()?.title)
+            }
+            assertEquals(0, requests.get(), "A guide declaration must never fetch a remote DTD")
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun internalSubsetsAndExternalEntitiesFailClosed() {
         val xxe = """
             <?xml version="1.0"?>
             <!DOCTYPE tv [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>

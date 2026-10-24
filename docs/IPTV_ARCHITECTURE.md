@@ -44,9 +44,10 @@ previous channel data. Disabling or deleting a source removes its channels.
 M3U handling includes BOM/CRLF, quoted metadata, relative URLs, group names,
 logos, EPG IDs, supported VLC request headers and header-specified EPG URLs.
 Xtream uses the supplied host/base path and safely encodes credentials. Only
-live categories/streams are included. XMLTV uses JVM streaming XML with DTD and
-external entity resolution disabled, time-zone-aware timestamps, gzip support,
-bounded decompression and current/upcoming programme selection.
+live categories/streams are included. XMLTV uses JVM streaming XML with external
+DTD loading and entity resolution disabled. Standard XMLTV document-type declarations are accepted
+without loading their referenced DTD; internal subsets are rejected. It uses
+time-zone-aware timestamps, gzip support, bounded decompression and current/upcoming programme selection.
 
 ## Persistence and privacy
 

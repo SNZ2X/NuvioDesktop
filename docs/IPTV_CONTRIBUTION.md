@@ -47,10 +47,11 @@ navigation remains unchanged.
 **Scope:** Desktop ingestion/storage/UI; shared screen boundary and player live
 policy required by desktop. No unrelated maintenance or styling changes.
 
-**Verification:** Desktop and shared metadata compile. All 129 added tests pass.
-The full desktop suite has 1,770 cases, four failures and one skip: the same
-failure cases/messages as the untouched upstream baseline. No existing tests were
-removed. See the validation details and actual Compose screenshots below.
+**Verification:** Desktop and shared metadata compile. All 130 added tests pass.
+The completed full suite has 1,771 cases, five failures and one skip: the four
+unchanged baseline failures plus an intermittent timeout in the unchanged QuickJS
+concurrent-scraper test. Both QuickJS tests pass on a separate targeted repeat.
+No existing upstream tests were removed. See the validation details and actual Compose screenshots below.
 
 **Review slices:**
 
@@ -95,21 +96,26 @@ node --check composeApp/src/desktopMain/resources/player-ui/controls.js
 ```
 
 Desktop compilation and common metadata compilation passed. The full desktop
-command exits nonzero for the **four unchanged baseline failures** listed above:
-**1,770 cases, 1,765 passed, 4 failed, 1 skipped**. All **129 added cases passed**,
-with zero removed existing cases. Comparison included failure messages, not just
-counts. The native Linux `frame_copy_test` passed. Machine-readable evidence:
+command exits nonzero: **1,771 cases, 1,765 passed, 5 failed, 1 skipped**.
+All **130 added cases passed**, with zero removed existing cases. The original
+four baseline failure cases/messages remain unchanged; the fifth failure is the
+previously observed intermittent `PluginRuntimeDesktopTest` concurrent-scraper
+timeout. Comparison included failure messages, not just counts. The native Linux `frame_copy_test` passed. Machine-readable evidence:
 [iptv-desktop-tests.json](validation/iptv-desktop-tests.json).
 
-Tests ran with isolated `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` under temporary
-directories; no user provider credentials or personal source files were used.
-One intermediate full run timed out in the unchanged concurrent scraper test
-in `PluginRuntimeDesktopTest`; its targeted rerun and the final full run passed.
+The automated suite ran with isolated `XDG_CONFIG_HOME` and `XDG_CACHE_HOME`
+under temporary directories; it uses synthetic fixtures. A separate read-only
+smoke check uses the saved provider configuration, without writing it or retaining
+provider payloads. It now imports XMLTV programmes through the actual repository.
+One intermediate full run crashed in the unchanged QuickJS native callback
+`ensureNotClosed`; the completed retry reported the timeout above. Both QuickJS
+cases passed when rerun separately. No plugin-runtime code was changed.
 
 Coverage includes:
 
 - Parser fixtures for M3U BOM/CRLF, attributes, headers, relative URLs, duplicate
-  identities and unsupported/HLS documents; XMLTV offsets, entity/DTD rejection,
+  identities and unsupported/HLS documents; XMLTV offsets, standard document-type
+  declarations without external DTD fetching, rejected internal subsets/entities,
   programme windows and bounds; Xtream authentication, credential encoding,
   categories, formats, duplicate stream IDs and gzip catalogs above the 16 MiB
   channel-playlist limit (Xtream catalogs have a separate 64 MiB cap).
@@ -161,8 +167,9 @@ The password fixture in the editor is synthetic and visually masked.
 Windows/macOS native runtime, file dialogs/ACLs, installers and packaging have
 not been exercised here. iOS builds need macOS; shared metadata compilation is
 not a substitute. A read-only smoke check against a saved provider source passed authentication
-and imported its live catalog through the actual CIO/Xtream client after the
-large-catalog fix. Provider payloads and credentials are not included in this
+and imported its live catalog and XMLTV guide through the actual CIO/Xtream
+client and repository. The parser accepts standard XMLTV document types while
+external DTD/entity loading stays disabled. Provider payloads and credentials are not included in this
 repository. End-to-end native IPTV video playback has not been tested. Before release, use an authorized provider/test stream to
 verify initial playback, channel switching, pause/tracks/fullscreen, errors,
 Retry and Back on each supported desktop OS. These are recorded limits, not

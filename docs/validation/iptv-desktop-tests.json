@@ -15,19 +15,19 @@
     "skipped": 1
   },
   "feature": {
-    "total": 1770,
+    "total": 1771,
     "passed": 1765,
-    "failed": 4,
+    "failed": 5,
     "skipped": 1
   },
   "added": {
-    "total": 129,
-    "passed": 129,
+    "total": 130,
+    "passed": 130,
     "failed": 0,
     "skipped": 0
   },
   "removedExistingCases": 0,
-  "failureCasesAndMessagesMatchBaseline": true,
+  "failureCasesAndMessagesMatchBaseline": false,
   "failures": [
     {
       "class": "com.nuvio.app.features.home.components.CollectionCardRemoteImageTest",
@@ -43,6 +43,11 @@
       "class": "com.nuvio.app.features.home.components.CollectionCardRemoteImageTest",
       "case": "animatedWebpPlaysOnHoverAndRestoresCoverOnExit[desktop]",
       "message": "java.lang.AssertionError: The focus asset should not load before hover expected:<0> but was:<1>"
+    },
+    {
+      "class": "com.nuvio.app.features.plugins.PluginRuntimeDesktopTest",
+      "case": "desktop runtime handles concurrent scraper executions[desktop]",
+      "message": "kotlinx.coroutines.TimeoutCancellationException: Timed out waiting for 60000 ms"
     },
     {
       "class": "com.nuvio.app.features.watchprogress.WatchProgressIdentityTest",
@@ -67,7 +72,7 @@
     "screenshots/live-tv-groups.png",
     "screenshots/live-tv-hidden-groups.png"
   ],
-  "intermediateRunNote": "One intermediate full run timed out in unchanged PluginRuntimeDesktopTest concurrent scraper stress test; targeted repeat and final full run passed that test.",
+  "intermediateRunNote": "An intermediate full run crashed in unchanged QuickJS ensureNotClosed native callback. The completed retry has the four original baseline assertion failures plus the previously observed intermittent concurrent-scraper timeout.",
   "notCovered": [
     "Windows/macOS native runtime and packaging",
     "iOS compilation on macOS",
@@ -82,5 +87,39 @@
     "hide-all recovery",
     "search-scoped bulk changes",
     "profile isolation and restart persistence"
-  ]
+  ],
+  "baselineFailures": [
+    {
+      "class": "com.nuvio.app.features.home.components.CollectionCardRemoteImageTest",
+      "case": "animatedImageDoesNotRequireAFileExtension[desktop]",
+      "message": "java.lang.AssertionError: The focus asset should not load before hover expected:<0> but was:<1>"
+    },
+    {
+      "class": "com.nuvio.app.features.home.components.CollectionCardRemoteImageTest",
+      "case": "animatedGifStillPlaysOnHover[desktop]",
+      "message": "java.lang.AssertionError: The focus asset should not load before hover expected:<0> but was:<1>"
+    },
+    {
+      "class": "com.nuvio.app.features.home.components.CollectionCardRemoteImageTest",
+      "case": "animatedWebpPlaysOnHoverAndRestoresCoverOnExit[desktop]",
+      "message": "java.lang.AssertionError: The focus asset should not load before hover expected:<0> but was:<1>"
+    },
+    {
+      "class": "com.nuvio.app.features.watchprogress.WatchProgressIdentityTest",
+      "case": "legacy payload derives episode progress key and preserves completed position[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be true."
+    }
+  ],
+  "baselineFailureCasesAndMessagesUnchanged": true,
+  "additionalFailures": [
+    {
+      "class": "com.nuvio.app.features.plugins.PluginRuntimeDesktopTest",
+      "case": "desktop runtime handles concurrent scraper executions[desktop]",
+      "message": "kotlinx.coroutines.TimeoutCancellationException: Timed out waiting for 60000 ms",
+      "note": "Existing unchanged QuickJS stress case; it also timed out intermittently before the guide fix."
+    }
+  ],
+  "providerGuideSmokeTest": "passed; read-only actual saved source through CIO and LiveTvRepository, standard XMLTV DOCTYPE parsed successfully",
+  "xmltvDoctypeSecurityChecks": "passed; bare, SYSTEM and PUBLIC declarations accepted without fetching remote DTD; internal subsets and entity references rejected",
+  "quickjsTargetedRepeat": "passed; both PluginRuntimeDesktopTest cases pass when rerun separately"
 }
