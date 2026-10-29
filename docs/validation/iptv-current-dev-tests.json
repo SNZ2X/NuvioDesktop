@@ -46,5 +46,10 @@
       "message": "java.lang.AssertionError: Expected value to be true."
     }
   ],
-  "note": "Full suite used isolated XDG_CONFIG_HOME, XDG_CACHE_HOME and XDG_DATA_HOME. These five failing cases match the previously recorded baseline/full-suite failures; no IPTV or live policy cases failed."
+  "note": "Full suite used isolated XDG_CONFIG_HOME, XDG_CACHE_HOME and XDG_DATA_HOME. These five failing cases match the previously recorded baseline/full-suite failures; no IPTV or live policy cases failed.",
+  "quickjs_recheck": {
+    "tests": 2,
+    "failures": 0,
+    "skipped": 0
+  }
 }

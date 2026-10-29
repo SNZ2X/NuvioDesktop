@@ -103,7 +103,7 @@ desktop suite completed **1,832 tests: 1,826 passed, five failed, one skipped**.
 All **149 IPTV/live-policy and desktop navigation cases passed**. The five failing
 cases match the previously recorded three animated-image assertions, legacy
 watch-progress assertion and intermittent QuickJS concurrent-scraper timeout.
-The suite used isolated app storage. See
+Both QuickJS cases pass when rerun separately. The suite used isolated app storage. See
 [current Dev test results](validation/iptv-current-dev-tests.json).
 
 A local unsigned Linux DEB also builds and passes the existing runtime-dependency
