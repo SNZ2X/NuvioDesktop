@@ -189,6 +189,11 @@ class LiveTvRepositoryTest {
         assertEquals(LiveTvRepositoryMessages.SourceFailed, failed.sourceErrors["playlist"])
         assertEquals(null, failed.error)
         assertEquals(healthy.programmes, failed.programmes, "Guide data survives a failed playlist fetch")
+
+        loader.failing.clear()
+        repo.refresh()
+        assertTrue(repo.uiState.value.sourceErrors.isEmpty(), "A successful refresh must clear the previous source failure")
+        assertTrue(repo.uiState.value.guideErrors.isEmpty())
     }
 
     @Test
@@ -229,9 +234,14 @@ class LiveTvRepositoryTest {
 
         val after = repo.uiState.value
         assertEquals(2, after.channels.size, "A guide failure must never discard valid channels")
-        assertEquals(LiveTvRepositoryMessages.EpgFailed, after.sourceErrors["playlist"])
+        assertTrue(after.sourceErrors.isEmpty(), "Fresh channels must not be reported as a source refresh failure")
+        assertEquals(LiveTvRepositoryMessages.EpgFailed, after.guideErrors["playlist"])
         assertEquals(before.programmes, after.programmes)
         assertEquals(null, after.error)
+
+        loader.failing.clear()
+        repo.refresh()
+        assertTrue(repo.uiState.value.guideErrors.isEmpty(), "Guide recovery must clear its previous failure")
     }
 
     @Test

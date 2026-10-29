@@ -10,8 +10,9 @@ approval of the feature request required by CONTRIBUTING.md.
   XMLTV parsing, Xtream live categories/streams, channel search, the source/group sidebar, group visibility and guide.
 - `features/livetv/LiveTvPlatform.kt` is the shared screen boundary. Navigation
   carries opaque channel IDs; credentials and stream URLs stay out of route keys.
-- A desktop Live TV navigation entry opens a dedicated browse screen. Source
-  management is reachable there. No mobile tab or native navigation ABI changes.
+- Live TV is a desktop root tab, retaining shared navigation and its browse state
+  when switching tabs. Source management is reachable there. Mobile navigation
+  exposes no Live TV entry, and the native navigation ABI stays unchanged.
 - Existing player surfaces gain explicit `isLive = false` and optional
   `onPreviousChannel` / `onNextChannel` callbacks. Live sessions do not read or
   write resume/watched progress, scrobble, fetch VOD metadata/skip intervals, or
@@ -44,7 +45,12 @@ previous channel data. Disabling or deleting a source removes its channels.
 M3U handling includes BOM/CRLF, quoted metadata, relative URLs, group names,
 logos, EPG IDs, supported VLC request headers and header-specified EPG URLs.
 Xtream uses the supplied host/base path and safely encodes credentials. Only
-live categories/streams are included. XMLTV uses JVM streaming XML with external
+live categories/streams are included. XMLTV is consumed directly from the HTTP or
+local-file stream rather than buffered as a complete document. Wire and decoded
+content are bounded at 512 MiB; scanning stops with an explicit failure beyond
+two million programmes. Each channel retains up to 48 entries, prioritizing the
+current programme and nearest upcoming programmes before history. XMLTV uses JVM
+streaming XML with external
 DTD loading and entity resolution disabled. Standard XMLTV document-type declarations are accepted
 without loading their referenced DTD; internal subsets are rejected. It uses
 time-zone-aware timestamps, gzip support, bounded decompression and current/upcoming programme selection.

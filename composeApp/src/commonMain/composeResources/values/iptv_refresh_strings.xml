@@ -1,0 +1,10 @@
+<resources>
+    <plurals name="iptv_sources_refresh_failed">
+        <item quantity="one">%1$d source could not be refreshed.</item>
+        <item quantity="other">%1$d sources could not be refreshed.</item>
+    </plurals>
+    <plurals name="iptv_guides_refresh_failed">
+        <item quantity="one">Guide data could not be refreshed for %1$d source.</item>
+        <item quantity="other">Guide data could not be refreshed for %1$d sources.</item>
+    </plurals>
+</resources>

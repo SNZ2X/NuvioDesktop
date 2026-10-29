@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayInputStream
 import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicLong
 
@@ -220,12 +219,16 @@ internal class LiveTvRepository(
         val previousProgrammes = previous.programmes
         val nextChannels = ArrayList<LiveTvChannel>()
         val nextErrors = LinkedHashMap<String, String>()
+        val nextGuideErrors = LinkedHashMap<String, String>()
         if (only != null) {
             // A targeted refresh neither clears nor re-evaluates other enabled sources; their
             // last failure stays visible until a full refresh actually retries them.
             val enabledIds = allSources.filter { it.enabled }.mapTo(HashSet()) { it.id }
             previous.sourceErrors.forEach { (sourceId, message) ->
                 if (sourceId !in only && sourceId in enabledIds) nextErrors[sourceId] = message
+            }
+            previous.guideErrors.forEach { (sourceId, message) ->
+                if (sourceId !in only && sourceId in enabledIds) nextGuideErrors[sourceId] = message
             }
         }
         val fetchedProgrammes = LinkedHashMap<String, List<LiveTvProgramme>>()
@@ -268,7 +271,7 @@ internal class LiveTvRepository(
             if (result.error == null) previousChannels[source.id]?.forEach { replacedChannelIds += it.id }
             nextChannels += result.channels
             fetchedProgrammes.putAll(result.programmes)
-            result.error?.let { nextErrors[source.id] = it }
+            result.error?.let { nextGuideErrors[source.id] = it }
         }
 
         val keepIds = nextChannels.mapTo(HashSet()) { it.id }
@@ -285,6 +288,7 @@ internal class LiveTvRepository(
                 channels = nextChannels,
                 programmes = programmes,
                 sourceErrors = nextErrors,
+                guideErrors = nextGuideErrors,
                 error = null,
             )
         }
@@ -302,12 +306,11 @@ internal class LiveTvRepository(
         for (location in locations) {
             ensureAlive()
             val parsed = try {
-                val document = loader.load(
+                loader.readStream(
                     location.value,
                     LiveTvLimits.XMLTV_BYTES,
                     allowLocalFiles = location.local,
-                )
-                ByteArrayInputStream(document.bytes).use { stream ->
+                ) { stream ->
                     XmltvParser.parse(stream, content.channels, now)
                 }
             } catch (cancellation: CancellationException) {
@@ -397,6 +400,7 @@ internal class LiveTvRepository(
                 channels = remaining,
                 programmes = it.programmes.filterKeys { channelId -> channelId in ids },
                 sourceErrors = it.sourceErrors - sourceId,
+                guideErrors = it.guideErrors - sourceId,
                 error = null,
             )
         }

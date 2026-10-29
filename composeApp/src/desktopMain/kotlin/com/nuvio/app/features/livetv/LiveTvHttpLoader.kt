@@ -7,17 +7,24 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpHeaders
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
+import io.ktor.utils.io.jvm.javaio.toInputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.FilterInputStream
+import java.io.PushbackInputStream
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -28,7 +35,8 @@ import kotlin.time.Duration.Companion.seconds
 /** Source limits shared by the network, repository and parser slices. */
 internal object LiveTvLimits {
     const val PLAYLIST_BYTES: Int = 16 * 1024 * 1024
-    const val XMLTV_BYTES: Int = 64 * 1024 * 1024
+    // XMLTV is streamed and retained programmes are bounded separately.
+    const val XMLTV_BYTES: Int = 512 * 1024 * 1024
     // Large Xtream catalogs can exceed the smaller channel-playlist budget.
     const val JSON_BYTES: Int = 64 * 1024 * 1024
 }
@@ -104,16 +112,56 @@ internal class LiveTvHttpLoader(
         }
     }
 
+    override suspend fun <T : Any> readStream(
+        location: String,
+        maxBytes: Int,
+        allowLocalFiles: Boolean,
+        consume: (InputStream) -> T,
+    ): T {
+        if (maxBytes <= 0) throw LiveTvLoadException(LIVE_TV_TOO_LARGE)
+        val trimmed = location.trim()
+        return when (schemeOf(trimmed)) {
+            "http", "https" -> withRemoteResponse(trimmed) { response, _ ->
+                val context = currentCoroutineContext()
+                response.bodyAsChannel().toInputStream(context[Job]).use { input ->
+                    consumeDecodedStream(input, maxBytes, { context.ensureActive() }, consume)
+                }
+            }
+            null, "file" -> withContext(Dispatchers.IO) {
+                if (!allowLocalFiles) throw LiveTvLoadException(LIVE_TV_LOCAL_NOT_ALLOWED)
+                val path = localPath(trimmed) ?: throw LiveTvLoadException(LIVE_TV_SCHEME_UNSUPPORTED)
+                if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
+                    throw LiveTvLoadException(LIVE_TV_LOCAL_MISSING)
+                }
+                try {
+                    val context = currentCoroutineContext()
+                    Files.newInputStream(path).use { consumeDecodedStream(it, maxBytes, { context.ensureActive() }, consume) }
+                } catch (failure: IOException) {
+                    throw LiveTvLoadException(LIVE_TV_LOCAL_UNREADABLE)
+                }
+            }
+            else -> throw LiveTvLoadException(LIVE_TV_SCHEME_UNSUPPORTED)
+        }
+    }
+
     private suspend fun fetchRemote(startUrl: String, maxBytes: Int): LiveTvDocument =
-        withContext(Dispatchers.IO) {
-            withTimeoutOrNull(FETCH_BUDGET) { fetchFollowingRedirects(startUrl, maxBytes) }
-                ?: throw LiveTvLoadException(LIVE_TV_HTTP_TIMEOUT)
+        withRemoteResponse(startUrl) { response, finalUrl ->
+            val raw = readBounded(response.bodyAsChannel(), maxBytes)
+            LiveTvDocument(decodeGzip(raw, maxBytes), finalUrl)
         }
 
-    private suspend fun fetchFollowingRedirects(
+    private suspend fun <T : Any> withRemoteResponse(
         startUrl: String,
-        maxBytes: Int,
-    ): LiveTvDocument {
+        consume: suspend (HttpResponse, String) -> T,
+    ): T = withContext(Dispatchers.IO) {
+        withTimeoutOrNull(FETCH_BUDGET) { fetchFollowingRedirects(startUrl, consume) }
+            ?: throw LiveTvLoadException(LIVE_TV_HTTP_TIMEOUT)
+    }
+
+    private suspend fun <T : Any> fetchFollowingRedirects(
+        startUrl: String,
+        consume: suspend (HttpResponse, String) -> T,
+    ): T {
         var url = startUrl
         var redirects = 0
         while (true) {
@@ -130,18 +178,16 @@ internal class LiveTvHttpLoader(
                         FetchOutcome.Redirect(resolveRedirect(url, target))
                     } else {
                         if (status !in 200..299) throw LiveTvLoadException("HTTP $status response")
-                        val raw = readBounded(response.bodyAsChannel(), maxBytes)
-                        FetchOutcome.Body(
-                            bytes = decodeGzip(raw, maxBytes),
-                            location = url,
-                        )
+                        FetchOutcome.Body(consume(response, url))
                     }
                 }
                 when (outcome) {
-                    is FetchOutcome.Body -> return LiveTvDocument(outcome.bytes, outcome.location)
+                    is FetchOutcome.Body -> return outcome.value
                     is FetchOutcome.Redirect -> next = outcome.target
                 }
             } catch (failure: LiveTvLoadException) {
+                throw failure
+            } catch (failure: LiveTvParseException) {
                 throw failure
             } catch (timeout: HttpRequestTimeoutException) {
                 throw LiveTvLoadException(LIVE_TV_HTTP_TIMEOUT)
@@ -182,9 +228,54 @@ internal class LiveTvHttpLoader(
     }
 }
 
-private sealed interface FetchOutcome {
-    data class Body(val bytes: ByteArray, val location: String) : FetchOutcome
-    data class Redirect(val target: String) : FetchOutcome
+private sealed interface FetchOutcome<out T> {
+    data class Body<T>(val value: T) : FetchOutcome<T>
+    data class Redirect(val target: String) : FetchOutcome<Nothing>
+}
+
+private fun <T> consumeDecodedStream(input: InputStream, maxBytes: Int, checkCancelled: () -> Unit, consume: (InputStream) -> T): T {
+    val header = PushbackInputStream(BoundedLiveTvInputStream(input, maxBytes, checkCancelled), 2)
+    val prefix = header.readNBytes(2)
+    if (prefix.isNotEmpty()) header.unread(prefix)
+    val decoded = if (prefix.size == 2 && prefix[0] == 0x1f.toByte() && prefix[1] == 0x8b.toByte()) {
+        GZIPInputStream(header)
+    } else header
+    return decoded.use { consume(BoundedLiveTvInputStream(it, maxBytes, checkCancelled)) }
+}
+
+/** Independently bounds wire bytes and decompressed bytes without buffering the guide. */
+private class BoundedLiveTvInputStream(
+    input: InputStream,
+    private val maxBytes: Int,
+    private val checkCancelled: () -> Unit,
+) : FilterInputStream(input) {
+    private var total = 0L
+
+    override fun read(): Int {
+        checkCancelled()
+        return super.read().also { if (it >= 0) account(1) }
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        checkCancelled()
+        return super.read(buffer, offset, length).also { if (it > 0) account(it) }
+    }
+
+    override fun skip(count: Long): Long {
+        val buffer = ByteArray(minOf(count.coerceAtLeast(0), READ_BUFFER_BYTES.toLong()).toInt())
+        var skipped = 0L
+        while (skipped < count && buffer.isNotEmpty()) {
+            val read = read(buffer, 0, minOf(buffer.size.toLong(), count - skipped).toInt())
+            if (read < 0) break
+            skipped += read
+        }
+        return skipped
+    }
+
+    private fun account(count: Int) {
+        total += count
+        if (total > maxBytes) throw LiveTvLoadException(LIVE_TV_TOO_LARGE)
+    }
 }
 
 private fun schemeOf(location: String): String? {

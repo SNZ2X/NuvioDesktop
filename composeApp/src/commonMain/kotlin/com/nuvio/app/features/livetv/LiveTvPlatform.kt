@@ -2,6 +2,7 @@ package com.nuvio.app.features.livetv
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import com.nuvio.app.features.player.PlayerBackRequest
 
 /** Only opaque channel IDs cross the navigation boundary; source credentials stay on desktop. */
@@ -27,8 +28,8 @@ internal object LiveTvLaunchStore {
 internal expect fun LiveTvScreen(
     profileId: Int,
     onPlay: (LiveTvPlaybackRequest) -> Unit,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    topChromePadding: Dp? = null,
 )
 
 @Composable

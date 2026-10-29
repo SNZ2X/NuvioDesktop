@@ -48,6 +48,8 @@ internal data class LiveTvState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val sourceErrors: Map<String, String> = emptyMap(),
+    /** Guide failures do not mean that the channel source failed to refresh. */
+    val guideErrors: Map<String, String> = emptyMap(),
 )
 
 internal data class LiveTvSourceContent(

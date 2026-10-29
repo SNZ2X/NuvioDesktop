@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -62,6 +61,7 @@ import nuvio.composeapp.generated.resources.compose_nav_search
 import nuvio.composeapp.generated.resources.compose_nav_settings
 import nuvio.composeapp.generated.resources.iptv_nav_live_tv
 import nuvio.composeapp.generated.resources.sidebar_library
+import nuvio.composeapp.generated.resources.sidebar_live_tv
 import nuvio.composeapp.generated.resources.sidebar_search
 import org.jetbrains.compose.resources.stringResource
 @Composable
@@ -82,7 +82,6 @@ internal fun MainTabsDestination(
     onTabSelected: (AppScreenTab) -> Unit,
     onProfileSelected: (NuvioProfile) -> Unit,
     onAddProfileRequested: () -> Unit,
-    onLiveTvClick: () -> Unit = {},
 ) {
     PlatformBackHandler(enabled = rootRouteActive && !isDesktop, onBack = onBack)
 
@@ -164,9 +163,9 @@ internal fun MainTabsDestination(
                 label = stringResource(Res.string.compose_nav_library),
             ),
             if (isDesktop) FloatingNavigationItem(
-                selected = false,
-                onClick = onLiveTvClick,
-                icon = Icons.Filled.LiveTv,
+                selected = selectedTab == AppScreenTab.LiveTv,
+                onClick = { onTabSelected(AppScreenTab.LiveTv) },
+                drawable = Res.drawable.sidebar_live_tv,
                 label = stringResource(Res.string.iptv_nav_live_tv),
             ) else null,
             FloatingNavigationItem(
@@ -270,7 +269,6 @@ internal fun MainTabsDestination(
                         onTabSelected = onTabSelected,
                         onProfileSelected = onProfileSelected,
                         onAddProfileRequested = onAddProfileRequested,
-                        onLiveTvClick = onLiveTvClick,
                         sidebarExpanded = isSidebarExpanded,
                         sidebarWidth = animatedSidebarWidth,
                         hoverSource = sidebarHoverSource,

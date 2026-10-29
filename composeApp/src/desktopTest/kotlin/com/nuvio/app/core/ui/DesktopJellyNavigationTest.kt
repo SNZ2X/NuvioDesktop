@@ -32,6 +32,8 @@ import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.sidebar_live_tv
 
 class DesktopJellyNavigationTest {
     @get:Rule
@@ -82,8 +84,8 @@ class DesktopJellyNavigationTest {
     }
 
     private fun setContent(withProfile: Boolean = false) {
-        val labels = listOf("Home", "Search", "Library", "Settings")
-        val icons = listOf(Icons.Default.Home, Icons.Default.Search, Icons.Default.VideoLibrary, Icons.Default.Settings)
+        val labels = listOf("Home", "Search", "Library", "Live TV", "Settings")
+        val icons = listOf(Icons.Default.Home, Icons.Default.Search, Icons.Default.VideoLibrary, null, Icons.Default.Settings)
         compose.setContent {
             NuvioTheme {
                 Box(Modifier.size(640.dp, 220.dp).background(Color(0xFF151619))) {
@@ -96,8 +98,9 @@ class DesktopJellyNavigationTest {
                                     clicks += index
                                     selected.intValue = index
                                 },
-                                icon = if (withProfile && index == 3) null else icons[index],
-                                content = if (withProfile && index == 3) {
+                                icon = if (withProfile && index == labels.lastIndex) null else icons[index],
+                                drawable = if (index == 3) Res.drawable.sidebar_live_tv else null,
+                                content = if (withProfile && index == labels.lastIndex) {
                                     { onClick ->
                                         Box(
                                             Modifier.size(26.dp).background(Color.Gray)

@@ -225,6 +225,57 @@ class XmltvParserTest {
     }
 
     @Test
+    fun channelsLaterThanTheOldProgrammeScanLimitStillReceiveTheirGuide() {
+        val parts = sequence {
+            yield("<tv>")
+            repeat(200_001) {
+                yield("""<programme channel="not-subscribed" start="20260301120000 +0000" stop="20260301130000 +0000"><title>Other</title></programme>""")
+            }
+            yield("""<programme channel="c" start="20260301120000 +0000" stop="20260301130000 +0000"><title>Current</title></programme></tv>""")
+        }.iterator()
+        val input = java.io.SequenceInputStream(object : java.util.Enumeration<java.io.InputStream> {
+            override fun hasMoreElements() = parts.hasNext()
+            override fun nextElement() = parts.next().byteInputStream()
+        })
+        val result = input.use { XmltvParser.parse(it, channels("channel" to "c"), now) }
+        assertEquals("Current", result.getValue("channel").single().title)
+    }
+
+    @Test
+    fun retainedGuideIsBoundedAndKeepsCurrentAndNearestFutureEvenWhenUnsorted() {
+        val format = java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss Z").withZone(java.time.ZoneOffset.UTC)
+        fun stamp(value: Long) = format.format(Instant.ofEpochMilli(value))
+        val xml = buildString {
+            append("<tv>")
+            for (index in 100 downTo -10) {
+                val start = now + index * 1_800_000L
+                append("""<programme channel="c" start="${stamp(start)}" stop="${stamp(start + 1_800_000)}"><title>Programme $index</title></programme>""")
+            }
+            append("</tv>")
+        }
+        val result = parse(xml, *channels("channel" to "c").toTypedArray()).getValue("channel")
+        assertEquals(48, result.size)
+        assertEquals("Programme 0", result.first().title)
+        assertEquals("Programme 1", result[1].title)
+        assertEquals("Programme 47", result.last().title)
+    }
+
+    @Test
+    fun cancellationWhileReadingGuideIsNotReportedAsInvalidXml() {
+        val xml = """<tv><programme channel="c" start="20260301120000 +0000" stop="20260301130000 +0000"><title>Current</title></programme></tv>"""
+        val input = object : java.io.FilterInputStream(xml.byteInputStream()) {
+            private var total = 0
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                if (total > 70) throw kotlinx.coroutines.CancellationException("Synthetic cancellation")
+                return super.read(buffer, offset, minOf(length, 8)).also { if (it > 0) total += it }
+            }
+        }
+        assertFailsWith<kotlinx.coroutines.CancellationException> {
+            input.use { XmltvParser.parse(it, channels("channel" to "c"), now) }
+        }
+    }
+
+    @Test
     fun noChannelsMeansNoWork() {
         val result = XmltvParser.parse(
             ByteArrayInputStream(ByteArray(0)),

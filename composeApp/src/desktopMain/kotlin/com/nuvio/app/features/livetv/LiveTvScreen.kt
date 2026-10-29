@@ -33,19 +33,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.nuvio.app.core.ui.Chip
+import com.nuvio.app.core.ui.NuvioModeChip
 import com.nuvio.app.core.ui.LocalVerticalBarPadding
 import com.nuvio.app.core.ui.withVerticalBar
 import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioLoadingIndicator
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioScreen
-import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.NuvioSurfaceCard
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.desktopPageHorizontalPaddingForWidth
@@ -64,19 +66,20 @@ import nuvio.composeapp.generated.resources.iptv_empty_no_matches_title
 import nuvio.composeapp.generated.resources.iptv_empty_no_sources_subtitle
 import nuvio.composeapp.generated.resources.iptv_empty_no_sources_title
 import nuvio.composeapp.generated.resources.iptv_error_generic
-import nuvio.composeapp.generated.resources.iptv_error_sources_partial
+import nuvio.composeapp.generated.resources.iptv_sources_refresh_failed
+import nuvio.composeapp.generated.resources.iptv_guides_refresh_failed
 import nuvio.composeapp.generated.resources.iptv_error_title
 import nuvio.composeapp.generated.resources.iptv_loading
 import nuvio.composeapp.generated.resources.iptv_hidden_groups_title
 import nuvio.composeapp.generated.resources.iptv_hidden_groups_subtitle
 import nuvio.composeapp.generated.resources.iptv_hidden_groups_action
 import nuvio.composeapp.generated.resources.iptv_manage_sources
-import nuvio.composeapp.generated.resources.iptv_nav_live_tv
 import nuvio.composeapp.generated.resources.iptv_refresh
 import nuvio.composeapp.generated.resources.iptv_search_hint
 import nuvio.composeapp.generated.resources.iptv_view_channels
 import nuvio.composeapp.generated.resources.iptv_view_guide
 import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.pluralStringResource
 
 private const val LiveTvClockTickMillis = 30_000L
 
@@ -86,11 +89,11 @@ internal enum class LiveTvBrowseMode { CHANNELS, GUIDE }
 internal actual fun LiveTvScreen(
     profileId: Int,
     onPlay: (LiveTvPlaybackRequest) -> Unit,
-    onBack: () -> Unit,
     modifier: Modifier,
+    topChromePadding: Dp?,
 ) {
     val repository = remember(profileId) { LiveTvRepository.forProfile(profileId) }
-    LiveTvScreenContent(profileId, repository, onPlay, onBack, modifier)
+    LiveTvScreenContent(profileId, repository, onPlay, modifier, topChromePadding = topChromePadding)
 }
 
 @Composable
@@ -98,9 +101,9 @@ internal fun LiveTvScreenContent(
     profileId: Int,
     repository: LiveTvRepository,
     onPlay: (LiveTvPlaybackRequest) -> Unit,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
     groupPreferences: LiveTvGroupPreferences = remember(profileId) { LiveTvGroupPreferences(profileId) },
+    topChromePadding: Dp? = null,
 ) {
     val state by repository.uiState.collectAsStateWithLifecycle()
     val hiddenGroupIds by groupPreferences.hiddenGroupIds.collectAsStateWithLifecycle()
@@ -175,104 +178,116 @@ internal fun LiveTvScreenContent(
         }
     }
     val partialFailures = state.sourceErrors.keys.count { it in enabledSourceIds }
+    val guideFailures = state.guideErrors.keys.count { it in enabledSourceIds }
+    LaunchedEffect(state.isLoading, state.channels, state.error, state.sourceErrors) {
+        if (!state.isLoading && state.channels.isNotEmpty() && state.error == null && state.sourceErrors.isEmpty()) {
+            actionFailed = false
+        }
+    }
     val manageGroups = { groupSaveFailed = false; showGroups = true }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize().background(tokens.colors.background)) {
         val pagePadding = desktopPageHorizontalPaddingForWidth(maxWidth.value)
         val contentPadding = PaddingValues(
-            start = pagePadding, end = pagePadding, top = tokens.spacing.screenTop,
+            start = pagePadding,
+            end = pagePadding,
+            top = topChromePadding ?: NuvioTokens.Space.s24,
+            bottom = NuvioTokens.Space.s24,
         ).withVerticalBar()
         val groupListWidth = if (maxWidth < 840.dp) 210.dp else 260.dp
         CompositionLocalProvider(LocalVerticalBarPadding provides PaddingValues()) {
-            Column(Modifier.fillMaxSize().padding(contentPadding)) {
-                NuvioScreenHeader(
-                    title = stringResource(Res.string.iptv_nav_live_tv),
-                    onBack = onBack,
-                ) {
-                    IconButton(onClick = refresh, enabled = !state.isLoading) {
-                        Icon(
-                            imageVector = Icons.Rounded.Refresh,
-                            contentDescription = stringResource(Res.string.iptv_refresh),
-                            tint = if (state.isLoading) tokens.colors.textDisabled else tokens.colors.textPrimary,
-                        )
+            Row(Modifier.fillMaxSize().padding(contentPadding)) {
+                LiveTvGroupNavigation(
+                    sources = enabledSources,
+                    groups = groups,
+                    hiddenGroupIds = hiddenGroupIds,
+                    selectedSourceId = effectiveSourceFilter,
+                    selectedGroupId = selectedGroup?.id,
+                    onSelect = { sourceId, groupId ->
+                        sourceFilterId = sourceId
+                        selectedGroupId = groupId
+                    },
+                    onManageGroups = manageGroups,
+                    modifier = Modifier.width(groupListWidth).fillMaxHeight(),
+                )
+                Spacer(Modifier.width(NuvioTokens.Space.s16))
+                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
+                    ) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            NuvioInputField(
+                                value = query,
+                                onValueChange = { query = it },
+                                placeholder = stringResource(Res.string.iptv_search_hint),
+                                modifier = Modifier.weight(1f).testTag("live-tv-channel-search"),
+                            )
+                            IconButton(onClick = refresh, enabled = !state.isLoading) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = stringResource(Res.string.iptv_refresh),
+                                    tint = if (state.isLoading) tokens.colors.textDisabled else tokens.colors.textPrimary,
+                                )
+                            }
+                            IconButton(onClick = { showSources = true }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.PlaylistPlay,
+                                    contentDescription = stringResource(Res.string.iptv_manage_sources),
+                                    tint = tokens.colors.textPrimary,
+                                )
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8)) {
+                            NuvioModeChip(
+                                label = stringResource(Res.string.iptv_view_channels),
+                                selected = mode == LiveTvBrowseMode.CHANNELS,
+                                onClick = { modeName = LiveTvBrowseMode.CHANNELS.name },
+                            )
+                            NuvioModeChip(
+                                label = stringResource(Res.string.iptv_view_guide),
+                                selected = mode == LiveTvBrowseMode.GUIDE,
+                                onClick = { modeName = LiveTvBrowseMode.GUIDE.name },
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12)) {
+                            Text(
+                                text = stringResource(Res.string.iptv_channels_count, filteredChannels.size),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = tokens.colors.textMuted,
+                            )
+                            if (hasFilters) {
+                                LiveTvTextAction(stringResource(Res.string.iptv_clear_filters), clearFilters)
+                            }
+                        }
+                        if (partialFailures > 0) {
+                            Text(
+                                pluralStringResource(Res.plurals.iptv_sources_refresh_failed, partialFailures, partialFailures),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = tokens.colors.warning,
+                            )
+                        }
+                        if (mode == LiveTvBrowseMode.GUIDE && guideFailures > 0) {
+                            Text(
+                                pluralStringResource(Res.plurals.iptv_guides_refresh_failed, guideFailures, guideFailures),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = tokens.colors.warning,
+                            )
+                        }
+                        if (actionFailed && state.error == null) {
+                            Text(
+                                stringResource(Res.string.iptv_error_generic),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = tokens.colors.danger,
+                            )
+                        }
                     }
-                    IconButton(onClick = { showSources = true }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.PlaylistPlay,
-                            contentDescription = stringResource(Res.string.iptv_manage_sources),
-                            tint = tokens.colors.textPrimary,
-                        )
-                    }
-                }
-                Row(Modifier.fillMaxWidth().weight(1f).padding(top = NuvioTokens.Space.s12)) {
-                    LiveTvGroupNavigation(
-                        sources = enabledSources,
-                        groups = groups,
-                        hiddenGroupIds = hiddenGroupIds,
-                        selectedSourceId = effectiveSourceFilter,
-                        selectedGroupId = selectedGroup?.id,
-                        onSelect = { sourceId, groupId ->
-                            sourceFilterId = sourceId
-                            selectedGroupId = groupId
-                        },
-                        onManageGroups = manageGroups,
-                        modifier = Modifier.width(groupListWidth).fillMaxHeight(),
-                    )
-                    Spacer(Modifier.width(NuvioTokens.Space.s16))
+                    Spacer(Modifier.padding(top = NuvioTokens.Space.s12))
                     NuvioScreen(
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds().testTag("live-tv-channel-list"),
                         horizontalPadding = 0.dp,
                         topPadding = 0.dp,
                     ) {
-                        item(key = "controls") {
-                            Column(
-                                Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
-                            ) {
-                                NuvioInputField(
-                                    value = query,
-                                    onValueChange = { query = it },
-                                    placeholder = stringResource(Res.string.iptv_search_hint),
-                                    modifier = Modifier.fillMaxWidth().testTag("live-tv-channel-search"),
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8)) {
-                                    Chip(
-                                        label = stringResource(Res.string.iptv_view_channels),
-                                        selected = mode == LiveTvBrowseMode.CHANNELS,
-                                        onClick = { modeName = LiveTvBrowseMode.CHANNELS.name },
-                                    )
-                                    Chip(
-                                        label = stringResource(Res.string.iptv_view_guide),
-                                        selected = mode == LiveTvBrowseMode.GUIDE,
-                                        onClick = { modeName = LiveTvBrowseMode.GUIDE.name },
-                                    )
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12)) {
-                                    Text(
-                                        text = stringResource(Res.string.iptv_channels_count, filteredChannels.size),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = tokens.colors.textMuted,
-                                    )
-                                    if (hasFilters) {
-                                        LiveTvTextAction(stringResource(Res.string.iptv_clear_filters), clearFilters)
-                                    }
-                                }
-                                if (partialFailures > 0) {
-                                    Text(
-                                        stringResource(Res.string.iptv_error_sources_partial, partialFailures),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = tokens.colors.warning,
-                                    )
-                                }
-                                if (actionFailed && state.error == null) {
-                                    Text(
-                                        stringResource(Res.string.iptv_error_generic),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = tokens.colors.danger,
-                                    )
-                                }
-                            }
-                        }
                         liveTvChannelFeed(
                             state = state,
                             sourceNameById = sourceNameById,
@@ -317,7 +332,7 @@ internal fun LiveTvScreenContent(
     if (showSources) {
         LiveTvSourcesDialog(
             sources = sources,
-            sourceErrors = state.sourceErrors,
+            sourceErrors = state.guideErrors + state.sourceErrors,
             onDismiss = { showSources = false },
             onSave = { source -> repository.saveSource(source) },
             onDelete = { sourceId -> repository.removeSource(sourceId) },

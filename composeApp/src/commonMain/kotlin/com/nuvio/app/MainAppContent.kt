@@ -435,6 +435,7 @@ internal fun MainAppContent(
                 searchScrollToTopRequests.tryEmit(Unit)
             }
             AppScreenTab.Library -> libraryScrollToTopRequests.tryEmit(Unit)
+            AppScreenTab.LiveTv -> Unit
             AppScreenTab.Settings -> settingsRootActionRequests.tryEmit(Unit)
         }
     }
@@ -492,7 +493,7 @@ internal fun MainAppContent(
 
     LaunchedEffect(initialTab) {
         snapshotFlow { selectedTab }.collectLatest { tab ->
-            NativeTabBridge.publishSelectedTab(tab.toNativeNavigationTab())
+            tab.toNativeNavigationTab()?.let(NativeTabBridge::publishSelectedTab)
             if (tab != AppScreenTab.Search) {
                 searchFocusRequestCount = 0
             }
@@ -1411,6 +1412,14 @@ internal fun MainAppContent(
                         ),
                         actions = { isTabletLayout ->
                             AppTabActions(
+                                onLiveTvPlay = { request ->
+                                    profileState.activeProfile?.profileIndex?.let { profileId ->
+                                        val launchId = com.nuvio.app.features.livetv.LiveTvLaunchStore.put(
+                                            com.nuvio.app.features.livetv.LiveTvLaunch(profileId, request),
+                                        )
+                                        navController.navigate(LiveTvPlayerRoute(launchId))
+                                    }
+                                },
                                 onCatalogClick = onCatalogClick,
                                 onPosterClick = navController::openPreview,
                                 onPosterLongClick = { meta ->
@@ -1543,11 +1552,6 @@ internal fun MainAppContent(
                             }
                         },
                         onTabSelected = ::handleRootTabClick,
-                        onLiveTvClick = {
-                            profileState.activeProfile?.profileIndex?.let { profileId ->
-                                navController.navigate(LiveTvRoute(profileId))
-                            }
-                        },
                         onProfileSelected = { profile ->
                             profileSwitchLoading = true
                             NativeTabBridge.publishTabBarVisible(false)
@@ -1655,7 +1659,10 @@ internal fun MainAppContent(
                 }
                 if (isDesktop) {
                     entry<LiveTvRoute> { route ->
-                        LiveTvDestination(route = route, navController = navController)
+                        LaunchedEffect(route) {
+                            activateTab(AppScreenTab.LiveTv)
+                            navController.popBackStack(expectedRoute = route)
+                        }
                     }
                     entry<LiveTvPlayerRoute> { route ->
                         DisposableEffect(route) {

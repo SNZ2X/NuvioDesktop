@@ -1,11 +1,23 @@
 package com.nuvio.app.features.livetv
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import com.nuvio.app.AppScreenTab
+import com.nuvio.app.DesktopHoverSidebar
+import com.nuvio.app.RootTabHost
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
@@ -40,6 +52,8 @@ class LiveTvScreenTest {
 
     private val source = LiveTvSource("demo", "Demo playlist", LiveTvSourceKind.M3U_URL, "https://demo.test/list.m3u")
     private val launches = mutableListOf<LiveTvPlaybackRequest>()
+    private var failGuide = false
+    private var failPlaylist = false
 
     @Test
     fun browseSearchGuideAndLaunchUseTheImportedChannels() {
@@ -126,7 +140,7 @@ class LiveTvScreenTest {
     @Test
     fun hideAllKeepsGroupManagementReachableAndCanRestoreTheList() {
         showScreen()
-        compose.onNodeWithContentDescription("Manage groups").performClick()
+        compose.onNodeWithText("Manage groups").performClick()
         savePreview("groups")
         compose.onNodeWithText("Hide all").performClick()
         compose.onNodeWithText("Close").performClick()
@@ -182,7 +196,76 @@ class LiveTvScreenTest {
         compose.runOnIdle { assertEquals(listOf(launches.single().channelId), launches.single().channelIds) }
     }
 
-    private fun showScreen(extraSource: Boolean = false, hiddenIds: Set<String> = emptySet(), extraGroups: Int = 0) {
+    @Test
+    fun liveTvUsesThePersistentSidebarAndKeepsFiltersWhenSwitchingTabs() {
+        showScreen(withNavigation = true)
+        compose.onNodeWithTag("live-tv-channel-search").performTextInput("Cinema")
+        compose.onNodeWithText("Search").performClick()
+        compose.onNodeWithText("Search tab content").assertIsDisplayed()
+        compose.onNodeWithText("Settings").assertIsDisplayed()
+        compose.onNodeWithText("Live TV").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Cinema One").assertIsDisplayed()
+        compose.onNodeWithText("News One").assertDoesNotExist()
+        compose.onNodeWithText("Home").assertIsDisplayed()
+        savePreview("tab-navigation")
+    }
+
+    @Test
+    fun listsStayBelowSearchAndGroupsHaveBottomAndFooterInsets() {
+        showScreen(extraGroups = 90)
+        val search = compose.onNodeWithTag("live-tv-channel-search").fetchSemanticsNode().boundsInRoot
+        val channels = compose.onNodeWithTag("live-tv-channel-list").fetchSemanticsNode().boundsInRoot
+        val groups = compose.onNodeWithTag("live-tv-groups-panel").fetchSemanticsNode().boundsInRoot
+        val groupList = compose.onNodeWithTag("live-tv-groups-list").fetchSemanticsNode().boundsInRoot
+        val footer = compose.onNodeWithTag("live-tv-groups-footer").fetchSemanticsNode().boundsInRoot
+        val viewport = compose.onNode(isRoot()).fetchSemanticsNode().boundsInRoot
+        assertTrue(channels.top > search.bottom, "Channel scrollbar must start below the search controls")
+        assertTrue(groups.bottom < viewport.bottom, "Groups panel must have a bottom page margin")
+        assertTrue(footer.bottom < groups.bottom, "Manage groups must have an inner bottom inset")
+        assertTrue(groupList.bottom <= footer.top, "Group scrolling must not overlap its footer")
+        compose.onNode(hasScrollToIndexAction() and hasAnyAncestor(hasTestTag("live-tv-channel-list")))
+            .performScrollToIndex(50)
+        assertEquals(search, compose.onNodeWithTag("live-tv-channel-search").fetchSemanticsNode().boundsInRoot)
+        compose.onNodeWithText("Live TV").assertDoesNotExist()
+        savePreview("layout-insets")
+    }
+
+    @Test
+    fun guideFailureDoesNotReportSuccessfulChannelRefreshAsSourceFailureAndRecoveryClearsIt() {
+        val repository = showScreen()
+        failGuide = true
+        compose.onNodeWithContentDescription("Refresh channels").performClick()
+        compose.waitUntil(10_000) { !repository.uiState.value.isLoading && repository.uiState.value.guideErrors.isNotEmpty() }
+        compose.onNodeWithText("1 source could not be refreshed.").assertDoesNotExist()
+        compose.onNodeWithText("News One").assertIsDisplayed()
+        compose.onNodeWithText("Guide").performClick()
+        compose.onNodeWithText("Guide data could not be refreshed for 1 source.").assertIsDisplayed()
+        failGuide = false
+        compose.onNodeWithContentDescription("Refresh channels").performClick()
+        compose.waitUntil(10_000) { !repository.uiState.value.isLoading && repository.uiState.value.guideErrors.isEmpty() }
+        compose.onNodeWithText("Guide data could not be refreshed for 1 source.").assertDoesNotExist()
+    }
+
+    @Test
+    fun recoveredChannelSourceStopsShowingItsOldRefreshFailure() {
+        val repository = showScreen()
+        failPlaylist = true
+        compose.onNodeWithContentDescription("Refresh channels").performClick()
+        compose.waitUntil(10_000) { !repository.uiState.value.isLoading && repository.uiState.value.sourceErrors.isNotEmpty() }
+        compose.onNodeWithText("1 source could not be refreshed.").assertIsDisplayed()
+        compose.onNodeWithText("News One").assertIsDisplayed()
+        failPlaylist = false
+        compose.onNodeWithContentDescription("Refresh channels").performClick()
+        compose.waitUntil(10_000) { !repository.uiState.value.isLoading && repository.uiState.value.sourceErrors.isEmpty() }
+        compose.onNodeWithText("1 source could not be refreshed.").assertDoesNotExist()
+    }
+
+    private fun showScreen(
+        extraSource: Boolean = false,
+        hiddenIds: Set<String> = emptySet(),
+        extraGroups: Int = 0,
+        withNavigation: Boolean = false,
+    ): LiveTvRepository {
         val now = System.currentTimeMillis()
         val formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss Z").withZone(ZoneOffset.UTC)
         fun time(offset: Long) = formatter.format(Instant.ofEpochMilli(now + offset))
@@ -212,14 +295,18 @@ class LiveTvScreenTest {
             override fun save(sources: List<LiveTvSource>) { this.sources = sources }
         }
         val loader = object : LiveTvDocumentLoader {
-            override suspend fun load(location: String, maxBytes: Int, allowLocalFiles: Boolean): LiveTvDocument =
-                LiveTvDocument(
+            override suspend fun load(location: String, maxBytes: Int, allowLocalFiles: Boolean): LiveTvDocument {
+                if ((failGuide && location.endsWith("guide.xml")) || (failPlaylist && location.endsWith(".m3u"))) {
+                    throw LiveTvLoadException("Synthetic unavailable document")
+                }
+                return LiveTvDocument(
                     (when {
                         location.endsWith("guide.xml") -> guide
                         location.endsWith("backup.m3u") -> playlist.replace("News One", "Backup News").replace("Cinema One", "Backup Cinema")
                         else -> playlist
                     }).encodeToByteArray(), location,
                 )
+            }
         }
         val repository = LiveTvRepository(store, loader)
         runBlocking { repository.load() }
@@ -232,13 +319,35 @@ class LiveTvScreenTest {
         compose.setContent {
             NuvioTheme {
                 Box(Modifier.size(1100.dp, 780.dp)) {
-                    LiveTvScreenContent(1, repository, launches::add, {}, Modifier, preferences)
+                    if (withNavigation) {
+                        var selectedTab by remember { mutableStateOf(AppScreenTab.LiveTv) }
+                        Row {
+                            DesktopHoverSidebar(
+                                selectedTab = selectedTab,
+                                onTabSelected = { selectedTab = it },
+                                onProfileSelected = {},
+                                onAddProfileRequested = {},
+                                sidebarExpanded = true,
+                                sidebarWidth = 192.dp,
+                            )
+                            RootTabHost(selectedTab, Modifier.weight(1f).fillMaxHeight(), profileId = 1) { tab ->
+                                if (tab == AppScreenTab.LiveTv) {
+                                    LiveTvScreenContent(1, repository, launches::add, Modifier, preferences)
+                                } else {
+                                    Text("${tab.name} tab content")
+                                }
+                            }
+                        }
+                    } else {
+                        LiveTvScreenContent(1, repository, launches::add, Modifier, preferences)
+                    }
                 }
             }
         }
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("Cinema One").fetchSemanticsNodes().isNotEmpty()
         }
+        return repository
     }
 
     private fun savePreview(name: String) {

@@ -76,6 +76,77 @@ class LiveTvHttpLoaderTest {
     }
 
     @Test
+    fun streamingReadsFollowRedirectsAndDecodeGzip() = runTest {
+        val http = client { request ->
+            if (request.url.encodedPath == "/start") {
+                respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, "/guide.xml.gz"))
+            } else {
+                respond(ByteReadChannel(gzip("<tv/>")))
+            }
+        }
+        try {
+            assertEquals("<tv/>", LiveTvHttpLoader(http).readStream("https://guide.test/start", 1024) {
+                it.readBytes().decodeToString()
+            })
+        } finally { http.close() }
+    }
+
+    @Test
+    fun streamingReadsStillBoundWireBytesDecodedBytesAndSkip() = runTest {
+        for (body in listOf(ByteArray(200_000) { 'a'.code.toByte() }, gzip("a".repeat(200_000)))) {
+            val http = client { respond(ByteReadChannel(body)) }
+            try {
+                assertFailsWith<LiveTvLoadException> {
+                    LiveTvHttpLoader(http).readStream("https://guide.test/guide.xml", 1024) { it.readBytes() }
+                }.also { assertEquals(LIVE_TV_TOO_LARGE, it.message) }
+                assertFailsWith<LiveTvLoadException> {
+                    LiveTvHttpLoader(http).readStream("https://guide.test/guide.xml", 1024) { it.skip(10_000) }
+                }.also { assertEquals(LIVE_TV_TOO_LARGE, it.message) }
+            } finally { http.close() }
+        }
+    }
+
+    @Test
+    fun streamingXmltvFindsProgrammesBeyondTheOld64MiBBufferLimit() = runTest {
+        val body = ByteArrayOutputStream()
+        val padding = "<!--${"x".repeat(8192)}-->".encodeToByteArray()
+        GZIPOutputStream(body).use { gzip ->
+            gzip.write("<tv>".encodeToByteArray())
+            repeat(8193) { gzip.write(padding) }
+            gzip.write("""<programme channel="c" start="20260301120000 +0000" stop="20260301130000 +0000"><title>Current</title></programme></tv>""".encodeToByteArray())
+        }
+        assertTrue(padding.size.toLong() * 8193 > 64L * 1024 * 1024)
+        val http = client { respond(ByteReadChannel(body.toByteArray())) }
+        try {
+            val channels = listOf(LiveTvChannel("channel", "source", "Channel", "https://stream.test/channel", epgId = "c"))
+            val now = java.time.Instant.parse("2026-03-01T12:00:00Z").toEpochMilli()
+            val programmes = LiveTvHttpLoader(http).readStream("https://guide.test/guide.xml.gz", LiveTvLimits.XMLTV_BYTES) {
+                XmltvParser.parse(it, channels, now)
+            }
+            assertEquals("Current", programmes.getValue("channel").single().title)
+        } finally { http.close() }
+    }
+
+    @Test
+    fun localStreamingRequiresExplicitPermissionAndDecodesGzip() = runTest {
+        val file = Files.createTempFile("livetv-stream-guide", ".xml.gz")
+        val http = client { error("Local guides must not make a network request") }
+        try {
+            Files.write(file, gzip("<tv/>"))
+            val loader = LiveTvHttpLoader(http)
+            assertFailsWith<LiveTvLoadException> {
+                loader.readStream(file.toString(), 1024) { it.readBytes() }
+            }
+            assertEquals("<tv/>", loader.readStream(file.toString(), 1024, allowLocalFiles = true) {
+                it.readBytes().decodeToString()
+            })
+        } finally {
+            http.close()
+            Files.deleteIfExists(file)
+        }
+    }
+
+    @Test
     fun redirectsAreFollowedAndCapped() = runTest {
         val http = client { request ->
             val hop = request.url.encodedPath.removePrefix("/hop").toIntOrNull()

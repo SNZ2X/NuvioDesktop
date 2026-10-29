@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Center the screen and play symbol at y=12; the aerial stays above the screen. -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M21,4H14.41L17.71,0.7L16.3,0L12,3.7L7.7,0L6.29,0.7L9.59,4H3C1.9,4 1,4.9 1,6V18C1,19.1 1.9,20 3,20H21C22.1,20 23,19.1 23,18V6C23,4.9 22.1,4 21,4ZM21,18H3V6H21V18ZM9,8V16L16,12Z" />
+</vector>

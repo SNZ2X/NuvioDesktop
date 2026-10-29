@@ -12,7 +12,7 @@ Third-party addons can expose streams but do not provide a native source manager
 or a programme guide. Live sessions also need explicit playback semantics so
 they do not become VOD resume/watched/scrobble records.
 
-**Proposal:** Add a desktop Live TV entry with searchable channels,
+**Proposal:** Add a desktop Live TV tab with searchable channels,
 a source/group sidebar, logos, now/next information and a programme guide.
 Hide unused groups per profile and restore them in a searchable group manager. Allow multiple M3U URLs, local M3U files and Xtream Codes sources, with optional XMLTV programme
 data and individual enable/disable, edit, delete and refresh controls. Reuse
@@ -27,9 +27,41 @@ dependencies and preserve the default VOD behavior.
 but cannot provide this native source and programme-guide workflow. A separate
 IPTV application already provides that workflow but requires leaving Nuvio.
 
-**Contribution plan:** Yes, but implementation/submission remains subject to
-explicit maintainer approval. A local implementation is prepared for evaluation;
-the proposed scope can be reduced or split according to maintainer direction.
+**Implementation available for discussion:** I have prepared a local desktop
+prototype and would like maintainer approval of the feature scope before
+submitting an implementation PR. It uses the existing Compose/theme components
+and dependencies. Source credentials remain local and encrypted, and IPTV source
+configuration is excluded from account sync.
+
+**Verification so far:**
+
+- Linux desktop compilation passes.
+- The latest focused runs passed 139 IPTV/live-playback-policy cases and four
+  navigation cases, covering parsing, source lifecycle, encrypted storage,
+  live/VOD behavior, group management, tab navigation and UI interaction.
+- A read-only check against a saved source verified channel import and automatic
+  XMLTV discovery/import, including a guide larger than the previous 64 MiB
+  buffer limit. Guide ingestion now streams the document with bounded retention.
+- Synthetic Compose screenshots demonstrate the browser, guide, source editor
+  and group manager and can be supplied without provider credentials or content.
+
+**Remaining work before merge:**
+
+- Integrate the branch with current `Dev`, commit the latest fixes and rerun the
+  full regression suite. The recorded full-suite comparison predates the latest
+  changes; it reported the four unchanged baseline failures and an intermittent
+  failure in the unchanged QuickJS runtime.
+- Verify actual native video playback, rapid channel switching, Retry and
+  Back/teardown on the supported desktop platforms. Automated controller/UI tests
+  and channel/EPG imports do not establish end-to-end media playback coverage.
+- Complete Windows/macOS runtime, file-dialog, storage-permission and packaging
+  checks. The current validation was performed on Linux.
+
+**Requested decision:** Would native desktop IPTV support fit Nuvio's direction,
+and would you approve a contribution in this scope? I can reduce the initial
+scope or split it into ingestion/storage, live-player behavior and desktop UI
+PRs according to maintainer preference. This request seeks scope approval; it
+does not claim the prototype is ready to merge.
 
 ## PR description draft (only after approval)
 

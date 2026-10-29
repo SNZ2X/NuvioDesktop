@@ -35,7 +35,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -78,6 +77,8 @@ import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryScreen
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.LibrarySortOption
+import com.nuvio.app.features.livetv.LiveTvPlaybackRequest
+import com.nuvio.app.features.livetv.LiveTvScreen
 import com.nuvio.app.features.player.PlayerBackReleaseGuard
 import com.nuvio.app.features.player.PlayerBackRequest
 import com.nuvio.app.features.profiles.ActiveProfileMiniAvatar
@@ -111,6 +112,7 @@ import nuvio.composeapp.generated.resources.compose_nav_settings
 import nuvio.composeapp.generated.resources.iptv_nav_live_tv
 import nuvio.composeapp.generated.resources.compose_settings_page_root
 import nuvio.composeapp.generated.resources.sidebar_library
+import nuvio.composeapp.generated.resources.sidebar_live_tv
 import nuvio.composeapp.generated.resources.sidebar_search
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -165,6 +167,7 @@ internal data class AppTabRequests(
 )
 
 internal data class AppTabActions(
+    val onLiveTvPlay: (LiveTvPlaybackRequest) -> Unit = {},
     val onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     val onPosterClick: ((MetaPreview) -> Unit)? = null,
     val onPosterLongClick: ((MetaPreview) -> Unit)? = null,
@@ -283,6 +286,19 @@ internal fun AppTabHost(
                     onDownloadsClick = actions.onDownloadsClick,
                     disintegrationRequest = state.libraryDisintegrationRequest,
                 )
+            }
+
+            AppScreenTab.LiveTv -> {
+                if (isDesktop) {
+                    state.profileId?.let { profileId ->
+                        LiveTvScreen(
+                            profileId = profileId,
+                            onPlay = actions.onLiveTvPlay,
+                            modifier = Modifier.fillMaxSize(),
+                            topChromePadding = state.topChromePadding,
+                        )
+                    }
+                }
             }
 
             AppScreenTab.Settings -> {
@@ -725,7 +741,6 @@ internal fun DesktopHoverSidebar(
     onTabSelected: (AppScreenTab) -> Unit,
     onProfileSelected: (NuvioProfile) -> Unit,
     onAddProfileRequested: () -> Unit,
-    onLiveTvClick: () -> Unit = {},
     sidebarExpanded: Boolean = false,
     sidebarWidth: Dp = DesktopSidebarCollapsedWidth,
     hoverSource: MutableInteractionSource = remember { MutableInteractionSource() },
@@ -771,7 +786,7 @@ internal fun DesktopHoverSidebar(
             } else {
                 0.dp
             }
-            val navColumnHeight = DesktopSidebarItemHeight * (AppScreenTab.entries.size + 1)
+            val navColumnHeight = DesktopSidebarItemHeight * AppScreenTab.entries.size
             val centeredNavTop = ((maxHeight - navColumnHeight) / 2).coerceAtLeast(0.dp)
             val availableNavOffset = (maxHeight - navColumnHeight - centeredNavTop).coerceAtLeast(0.dp)
             val navColumnOffset = (minNavTop - centeredNavTop)
@@ -865,15 +880,14 @@ internal fun DesktopHoverSidebar(
                 }
                 DesktopSidebarItem(
                     label = stringResource(Res.string.iptv_nav_live_tv),
-                    selected = false,
+                    selected = selectedTab == AppScreenTab.LiveTv,
                     expanded = sidebarExpanded,
                     onClick = {
-                        onProfileStackVisibleChange(false)
-                        onLiveTvClick()
+                        selectTab(AppScreenTab.LiveTv)
                     },
                 ) { color ->
                     Icon(
-                        imageVector = Icons.Filled.LiveTv,
+                        painter = painterResource(Res.drawable.sidebar_live_tv),
                         contentDescription = stringResource(Res.string.iptv_nav_live_tv),
                         modifier = Modifier.size(DesktopSidebarIconSize),
                         tint = color,

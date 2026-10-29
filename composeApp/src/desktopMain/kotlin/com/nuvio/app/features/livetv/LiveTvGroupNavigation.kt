@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,7 +57,8 @@ internal fun LiveTvGroupNavigation(
     val ungrouped = stringResource(Res.string.iptv_groups_ungrouped)
     val listState = rememberLazyListState()
     Column(
-        modifier.background(tokens.colors.surface, tokens.shapes.card).padding(NuvioTokens.Space.s12),
+        modifier.testTag("live-tv-groups-panel").clip(tokens.shapes.card)
+            .background(tokens.colors.surface).padding(NuvioTokens.Space.s16),
         verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -71,7 +73,7 @@ internal fun LiveTvGroupNavigation(
             }
         }
         NuvioInputField(query, { query = it }, stringResource(Res.string.iptv_groups_search))
-        Box(Modifier.fillMaxWidth().weight(1f)) {
+        Box(Modifier.fillMaxWidth().weight(1f).testTag("live-tv-groups-list")) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize().padding(end = NuvioTokens.Space.s8),
@@ -137,7 +139,16 @@ internal fun LiveTvGroupNavigation(
                 modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
             )
         }
-        LiveTvTextAction(stringResource(Res.string.iptv_groups_manage), onManageGroups)
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = NuvioTokens.Space.s8, vertical = NuvioTokens.Space.s8)
+                .testTag("live-tv-groups-footer"),
+        ) {
+            DialogButton(
+                text = stringResource(Res.string.iptv_groups_manage),
+                onClick = onManageGroups,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

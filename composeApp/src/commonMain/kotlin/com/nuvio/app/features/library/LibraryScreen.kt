@@ -76,6 +76,7 @@ import com.nuvio.app.core.ui.posterGridColumnCountForViewport
 import com.nuvio.app.features.home.components.posterGridColumnCountForWidth
 import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
+import com.nuvio.app.core.ui.NuvioModeChip
 import com.nuvio.app.core.ui.shimmer
 import com.nuvio.app.core.ui.LocalVerticalBarPadding
 import com.nuvio.app.core.ui.nuvioHorizontalScrollBleed
@@ -756,18 +757,18 @@ private fun LibrarySourceSwitch(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        LibraryChip(
+        NuvioModeChip(
             label = stringResource(Res.string.library_source_saved),
             selected = selectedMode == LibraryViewMode.Saved,
             onClick = { onModeSelected(LibraryViewMode.Saved) },
         )
-        LibraryChip(
+        NuvioModeChip(
             label = stringResource(Res.string.library_source_cloud),
             selected = selectedMode == LibraryViewMode.Cloud,
             onClick = { onModeSelected(LibraryViewMode.Cloud) },
         )
         if (showServers) {
-            LibraryChip(
+            NuvioModeChip(
                 label = stringResource(Res.string.library_source_servers),
                 selected = selectedMode == LibraryViewMode.Servers,
                 onClick = { onModeSelected(LibraryViewMode.Servers) },
@@ -864,41 +865,6 @@ private fun CloudLibraryToolbar(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun LibraryChip(
-    label: String,
-    selected: Boolean,
-    loading: Boolean = false,
-    error: Boolean = false,
-    onClick: () -> Unit,
-) {
-    val colorScheme = MaterialTheme.colorScheme
-    Surface(
-        modifier = Modifier
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
-        color = if (selected) colorScheme.primaryContainer else colorScheme.surfaceContainerLow,
-        border = if (selected) BorderStroke(1.dp, colorScheme.primary.copy(alpha = 0.45f)) else null,
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier
-                .padding(horizontal = 14.dp, vertical = 8.dp)
-                .shimmer(loading),
-            style = MaterialTheme.typography.labelMedium,
-            color = when {
-                error -> colorScheme.error
-                selected -> colorScheme.onPrimaryContainer
-                else -> colorScheme.onSurfaceVariant
-            },
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 

@@ -8,6 +8,7 @@ import javax.xml.stream.XMLInputFactory
 import javax.xml.stream.XMLStreamConstants
 import javax.xml.stream.XMLStreamException
 import javax.xml.stream.XMLStreamReader
+import kotlinx.coroutines.CancellationException
 
 internal const val LIVE_TV_XMLTV_INVALID: String = "EPG document is invalid"
 internal const val LIVE_TV_XMLTV_UNSAFE: String = "EPG document uses a forbidden DTD"
@@ -26,7 +27,8 @@ internal object XmltvParser {
     private const val WINDOW_AFTER_MS = 48L * 60 * 60 * 1000
     private const val MAX_DEPTH = 32
     /** Bound on scanned programme elements, whether or not they are kept. */
-    private const val MAX_PROGRAMMES = 200_000
+    private const val MAX_PROGRAMMES = 2_000_000
+    private const val MAX_PROGRAMMES_PER_CHANNEL = 48
     private const val MAX_CHANNELS = 50_000
     private const val MAX_TEXT_LENGTH = 2_048
     private const val MAX_TITLE_LENGTH = 512
@@ -42,11 +44,21 @@ internal object XmltvParser {
         val programmes = HashMap<String, MutableList<LiveTvProgramme>>()
         val windowStart = nowEpochMs - WINDOW_BEFORE_MS
         val windowEnd = nowEpochMs + WINDOW_AFTER_MS
+        // Keep current and earliest upcoming entries before filling any spare history slots.
+        val priority = compareBy<LiveTvProgramme>(
+            { when {
+                it.startEpochMs <= nowEpochMs && it.endEpochMs > nowEpochMs -> 0
+                it.startEpochMs > nowEpochMs -> 1
+                else -> 2
+            } },
+            { if (it.endEpochMs <= nowEpochMs) -it.endEpochMs else it.startEpochMs },
+            { it.endEpochMs },
+        )
 
         val reader = try {
             secureFactory().createXMLStreamReader(input)
-        } catch (_: XMLStreamException) {
-            throw LiveTvParseException(LIVE_TV_XMLTV_INVALID)
+        } catch (failure: XMLStreamException) {
+            rethrowXmltvReadFailure(failure)
         } catch (_: IllegalArgumentException) {
             throw LiveTvParseException(LIVE_TV_XMLTV_INVALID)
         }
@@ -117,9 +129,10 @@ internal object XmltvParser {
                                 windowStart = windowStart,
                                 windowEnd = windowEnd,
                                 into = programmes,
+                                priority = priority,
                             )
                             scanned++
-                            if (scanned >= MAX_PROGRAMMES) break
+                            if (scanned > MAX_PROGRAMMES) throw LiveTvParseException("EPG programme limit exceeded")
                             elementDepth = -1
                             textDepth = -1
                             textName = null
@@ -140,8 +153,10 @@ internal object XmltvParser {
             }
         } catch (failure: LiveTvParseException) {
             throw failure
-        } catch (_: XMLStreamException) {
-            throw LiveTvParseException(LIVE_TV_XMLTV_INVALID)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: XMLStreamException) {
+            rethrowXmltvReadFailure(failure)
         } catch (_: IllegalStateException) {
             throw LiveTvParseException(LIVE_TV_XMLTV_INVALID)
         } finally {
@@ -170,6 +185,7 @@ internal object XmltvParser {
         windowStart: Long,
         windowEnd: Long,
         into: MutableMap<String, MutableList<LiveTvProgramme>>,
+        priority: Comparator<LiveTvProgramme>,
     ) {
         if (sourceChannelId == null) return
         val channelIds = targets[sourceChannelId] ?: return
@@ -186,7 +202,12 @@ internal object XmltvParser {
             description = description.orEmpty(),
         )
         for (channelId in channelIds) {
-            into.getOrPut(channelId) { ArrayList() }.add(programme)
+            val entries = into.getOrPut(channelId) { ArrayList() }
+            if (entries.size >= MAX_PROGRAMMES_PER_CHANNEL && priority.compare(programme, entries.last()) >= 0) continue
+            val found = entries.binarySearch(programme, priority)
+            if (found >= 0 && entries[found] == programme) continue
+            entries.add(if (found < 0) -found - 1 else found, programme)
+            if (entries.size > MAX_PROGRAMMES_PER_CHANNEL) entries.removeAt(entries.lastIndex)
         }
     }
 
@@ -286,4 +307,17 @@ internal object XmltvParser {
         """<!DOCTYPE\s+tv(?:\s+SYSTEM\s+(?:"[^"]*"|'[^']*')|\s+PUBLIC\s+(?:"[^"]*"|'[^']*')\s+(?:"[^"]*"|'[^']*'))?\s*>""",
     )
     private val WHITESPACE = Regex("\\s+")
+}
+
+/** StAX may wrap I/O limits or coroutine cancellation; preserve those outcomes. */
+private fun rethrowXmltvReadFailure(failure: XMLStreamException): Nothing {
+    var cause: Throwable? = failure
+    repeat(8) {
+        when (val current = cause) {
+            is CancellationException -> throw current
+            is LiveTvLoadException -> throw current
+        }
+        cause = cause?.cause
+    }
+    throw LiveTvParseException(LIVE_TV_XMLTV_INVALID)
 }

@@ -8,28 +8,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.nuvio.app.core.ui.isFullscreenActionActive
 import com.nuvio.app.core.ui.toggleFullscreenAction
-import com.nuvio.app.features.livetv.LiveTvLaunch
 import com.nuvio.app.features.livetv.LiveTvLaunchStore
 import com.nuvio.app.features.livetv.LiveTvPlayerScreen
-import com.nuvio.app.features.livetv.LiveTvScreen
 import com.nuvio.app.features.player.PlayerReleaseBeforeBack
 import com.nuvio.app.navigation.LiveTvPlayerRoute
-import com.nuvio.app.navigation.LiveTvRoute
 import com.nuvio.app.navigation.NuvioNavigator
-
-@Composable
-internal fun LiveTvDestination(route: LiveTvRoute, navController: NuvioNavigator) {
-    val onBack = rememberGuardedPopBackStack(navController, route)
-    LiveTvScreen(
-        profileId = route.profileId,
-        onPlay = { request ->
-            val launchId = LiveTvLaunchStore.put(LiveTvLaunch(route.profileId, request))
-            navController.navigate(LiveTvPlayerRoute(launchId))
-        },
-        onBack = onBack,
-        modifier = Modifier.fillMaxSize(),
-    )
-}
 
 @Composable
 internal fun LiveTvPlayerDestination(
