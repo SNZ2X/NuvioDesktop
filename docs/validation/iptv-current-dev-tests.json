@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-29",
+  "upstream_dev": "cafd3fe909c213e3a46f1b0fb4384154872834f8",
+  "integration_commit": "c82cc95f",
+  "platform": "Linux x86_64",
+  "commands": [
+    "./gradlew :composeApp:compileKotlinDesktop :composeApp:compileCommonMainKotlinMetadata",
+    "./gradlew :composeApp:desktopTest --no-configuration-cache"
+  ],
+  "compilation": "passed",
+  "full_suite": {
+    "tests": 1832,
+    "failures": 5,
+    "errors": 0,
+    "skipped": 1
+  },
+  "iptv_and_navigation": {
+    "tests": 149,
+    "failures": 0,
+    "skipped": 0
+  },
+  "failures": [
+    {
+      "class": "com.nuvio.app.features.home.components.CollectionCardRemoteImageTest",
+      "test": "animatedImageDoesNotRequireAFileExtension[desktop]",
+      "message": "java.lang.AssertionError: The focus asset should not load before hover expected:<0> but was:<1>"
+    },
+    {
+      "class": "com.nuvio.app.features.home.components.CollectionCardRemoteImageTest",
+      "test": "animatedGifStillPlaysOnHover[desktop]",
+      "message": "java.lang.AssertionError: The focus asset should not load before hover expected:<0> but was:<1>"
+    },
+    {
+      "class": "com.nuvio.app.features.home.components.CollectionCardRemoteImageTest",
+      "test": "animatedWebpPlaysOnHoverAndRestoresCoverOnExit[desktop]",
+      "message": "java.lang.AssertionError: The focus asset should not load before hover expected:<0> but was:<1>"
+    },
+    {
+      "class": "com.nuvio.app.features.plugins.PluginRuntimeDesktopTest",
+      "test": "desktop runtime handles concurrent scraper executions[desktop]",
+      "message": "kotlinx.coroutines.TimeoutCancellationException: Timed out waiting for 60000 ms"
+    },
+    {
+      "class": "com.nuvio.app.features.watchprogress.WatchProgressIdentityTest",
+      "test": "legacy payload derives episode progress key and preserves completed position[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be true."
+    }
+  ],
+  "note": "Full suite used isolated XDG_CONFIG_HOME, XDG_CACHE_HOME and XDG_DATA_HOME. These five failing cases match the previously recorded baseline/full-suite failures; no IPTV or live policy cases failed."
+}

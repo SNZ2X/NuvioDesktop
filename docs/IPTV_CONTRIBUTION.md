@@ -91,6 +91,27 @@ No existing upstream tests were removed. See the validation details and actual C
 2. Explicit shared live playback policy and regression tests.
 3. Desktop navigation, source/channel/guide UI and playback wrapper.
 
+## Current Dev integration (2026-10-29)
+
+Integrated upstream `Dev` at `cafd3fe909c213e3a46f1b0fb4384154872834f8`.
+The merge preserves chapters, stream information and automatic subtitle sync for
+VOD. Live playback skips chapter discovery/seeking and automatic subtitle sync;
+paired live/VOD regression tests cover both policies.
+
+Linux desktop compilation and shared Kotlin metadata compilation pass. The full
+desktop suite completed **1,832 tests: 1,826 passed, five failed, one skipped**.
+All **149 IPTV/live-policy and desktop navigation cases passed**. The five failing
+cases match the previously recorded three animated-image assertions, legacy
+watch-progress assertion and intermittent QuickJS concurrent-scraper timeout.
+The suite used isolated app storage. See
+[current Dev test results](validation/iptv-current-dev-tests.json).
+
+A local unsigned Linux DEB also builds and passes the existing runtime-dependency
+and package-metadata verification scripts. The DEB lookup now accepts both JDK
+filename conventions for the default Debian release (`version-1` and `version`).
+Platform installer builds use empty `local.properties`; production service
+credentials, signing identities and Sentry uploads are not required or bundled.
+
 ## Upstream verification baseline
 
 Base: `NuvioMedia/NuvioDesktop`, branch `Dev`, commit
