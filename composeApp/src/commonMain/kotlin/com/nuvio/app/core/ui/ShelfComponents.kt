@@ -303,6 +303,7 @@ fun NuvioPosterCard(
                     contentDescription = title,
                     modifier = Modifier.matchParentSize(),
                     contentScale = ContentScale.Crop,
+                    desktopAnimation = posterCardStyle.animatedArtworkMode.toDesktopAnimation(),
                 )
             } else {
                 Text(

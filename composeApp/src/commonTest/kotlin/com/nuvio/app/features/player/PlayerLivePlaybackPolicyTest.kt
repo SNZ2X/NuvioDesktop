@@ -1,6 +1,8 @@
 package com.nuvio.app.features.player
 
 import androidx.compose.ui.Modifier
+import com.nuvio.app.features.autosync.AutoSyncPlayerController
+import com.nuvio.app.features.autosync.AutoSyncSubtitleCandidate
 import com.nuvio.app.features.watchprogress.WatchProgressPlaybackSession
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -131,6 +133,57 @@ class PlayerLivePlaybackPolicyTest {
         assertEquals(10_000L, vodController.seeks[0])
         assertEquals(120_000L, vodController.seeks[1])
         assertTrue(vodController.seeks[2] >= 52_000L, "double-tap forwards from the live position")
+    }
+
+    @Test
+    fun liveSkipsChapterDiscoveryAndSelectionWhileVodRetainsBoth() = runTest {
+        val chapters = listOf(PlayerChapter(0L, "Opening"), PlayerChapter(60_000L, "Part two"))
+        val liveController = RecordingController(chapterItems = chapters)
+        val live = PlayerScreenRuntime(liveArgs()).apply {
+            scope = backgroundScope
+            playerController = liveController
+            playerControllerSourceUrl = activeSourceUrl
+            this.chapters = chapters
+        }
+        live.loadChaptersIfNeeded()
+        live.openChaptersPanel()
+        live.selectChapter(1)
+        assertEquals(0, liveController.chapterReads)
+        assertFalse(live.showChaptersPanel)
+        assertTrue(liveController.seeks.isEmpty())
+
+        val vodController = RecordingController(chapterItems = chapters)
+        val vod = PlayerScreenRuntime(vodArgs()).apply {
+            scope = backgroundScope
+            playerController = vodController
+            playerControllerSourceUrl = activeSourceUrl
+        }
+        vod.loadChaptersIfNeeded()
+        vod.openChaptersPanel()
+        assertEquals(1, vodController.chapterReads)
+        assertTrue(vod.showChaptersPanel)
+        vod.selectChapter(1)
+        assertEquals(listOf(60_000L), vodController.seeks)
+    }
+
+    @Test
+    fun liveSubtitleSelectionBypassesAutoSyncWhileVodRetainsIt() {
+        val liveController = RecordingAutoSyncController()
+        val live = PlayerScreenRuntime(liveArgs()).apply { playerController = liveController }
+        live.configureAutoSyncController(liveController)
+        live.attachSelectedAddonSubtitleWithAutoSync("https://example.test/subtitle.vtt")
+        assertFalse(live.maybeAutoSyncRestoredSubtitleAtStart("https://example.test/subtitle.vtt"))
+        assertEquals(0, liveController.candidateUpdates)
+        assertEquals(0, liveController.syncedSelections)
+        assertEquals(listOf("https://example.test/subtitle.vtt"), liveController.delegate.subtitleUris)
+
+        val vodController = RecordingAutoSyncController()
+        val vod = PlayerScreenRuntime(vodArgs()).apply { playerController = vodController }
+        vod.configureAutoSyncController(vodController)
+        vod.attachSelectedAddonSubtitleWithAutoSync("https://example.test/subtitle.vtt")
+        assertEquals(1, vodController.candidateUpdates)
+        assertEquals(1, vodController.syncedSelections)
+        assertTrue(vodController.delegate.subtitleUris.isEmpty())
     }
 
     @Test
@@ -513,8 +566,15 @@ class PlayerLivePlaybackPolicyTest {
 
     private class RecordingController(
         private val release: ((onReleased: () -> Unit, onReleasedFailed: (String) -> Unit) -> Unit)? = null,
+        private val chapterItems: List<PlayerChapter> = emptyList(),
     ) : PlayerEngineController {
         val seeks = mutableListOf<Long>()
+        var chapterReads = 0
+            private set
+        override suspend fun getChapters(): List<PlayerChapter> {
+            chapterReads++
+            return chapterItems
+        }
         var releaseCount = 0
             private set
         var retryCount = 0
@@ -539,7 +599,8 @@ class PlayerLivePlaybackPolicyTest {
         override fun applyAudioLanguagePreferences(languages: List<String>) = Unit
         override fun selectAudioTrack(index: Int) = Unit
         override fun selectSubtitleTrack(index: Int) = Unit
-        override fun setSubtitleUri(url: String) = Unit
+        val subtitleUris = mutableListOf<String>()
+        override fun setSubtitleUri(url: String) { subtitleUris += url }
         override fun clearExternalSubtitle() = Unit
         override fun clearExternalSubtitleAndSelect(trackIndex: Int) = Unit
 
@@ -551,6 +612,20 @@ class PlayerLivePlaybackPolicyTest {
             val handler = release
             if (handler == null) onReleased() else handler(onReleased, onReleaseFailed)
         }
+    }
+
+    private class RecordingAutoSyncController(
+        val delegate: RecordingController = RecordingController(),
+    ) : PlayerEngineController by delegate, AutoSyncPlayerController {
+        var candidateUpdates = 0
+        var syncedSelections = 0
+        override fun cancelForManualSubtitleDelay() = Unit
+        override fun setAutoSyncSubtitleCandidates(candidates: List<AutoSyncSubtitleCandidate>) {
+            candidateUpdates++
+        }
+        override fun setSubtitleUriWithAutoSync(url: String) { syncedSelections++ }
+        override fun setSubtitleUriWithSelectedAutoSync(url: String) { syncedSelections++ }
+        override fun setAutoSyncAppliedListener(listener: ((String, Int) -> Unit)?) = Unit
     }
 
     private fun liveArgs(
