@@ -1,0 +1,669 @@
+# Build-only desktop installer workflow for the native IPTV desktop branch.
+#
+# This deliberately does NOT reuse the production desktop-release workflow: it
+# needs no environment secrets, signs/notarizes nothing, uploads nothing to
+# Sentry, and never creates tags or GitHub releases. Every job runs with
+# `contents: read` and an intentionally empty `local.properties`.
+#
+# Outputs are unsigned test installers only:
+#   Windows x64 MSI, Linux x64 DEB, macOS arm64/x86_64 DMG.
+#
+# Triggers:
+#   - push to the feat/native-iptv branch (all platforms, focused Linux tests)
+#   - manual dispatch: Actions -> Build IPTV Desktop Test Installers -> Run workflow
+
+name: Build IPTV Desktop Test Installers
+
+on:
+  push:
+    branches:
+      - feat/native-iptv
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Desktop target to build
+        required: true
+        type: choice
+        options:
+          - all
+          - windows
+          - linux
+          - macos
+        default: all
+      run_focused_tests:
+        description: Run the focused desktop IPTV/player policy tests on Linux
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iptv-desktop-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Resolve desktop version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Read desktop version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_file="composeApp/Configuration/DesktopVersion.properties"
+          version="$(
+            sed -nE 's/^[[:space:]]*VERSION_NAME[[:space:]]*=[[:space:]]*([^[:space:]#]+).*$/\1/p' \
+              "${version_file}" | head -n 1
+          )"
+          if [[ -z "${version}" ]]; then
+            echo "VERSION_NAME is missing from ${version_file}." >&2
+            exit 1
+          fi
+          if [[ ! "${version}" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]]; then
+            echo "Unsupported desktop version: ${version}" >&2
+            exit 1
+          fi
+          echo "Desktop version: ${version}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+  windows:
+    name: Windows x64 MSI
+    needs: prepare
+    if: github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'windows'
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      DESKTOP_VERSION: ${{ needs.prepare.outputs.version }}
+      WEBVIEW2_VERSION: 1.0.4078.44
+      # Explicitly empty: never upload source bundles to Sentry from this build.
+      SENTRY_AUTH_TOKEN: ''
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Prepare empty local.properties
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > local.properties
+          if [[ -s local.properties ]]; then
+            echo "local.properties must stay empty for this build." >&2
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*(NUVIO_|TRAKT_|MDBLIST_|SIMKL_|SENTRY_|TMDB_)' local.properties; then
+            echo "local.properties must not contain service configuration or credentials." >&2
+            exit 1
+          fi
+          echo "local.properties is empty: no credentials or service configuration are bundled."
+
+      - name: Materialize Windows runtime from Git LFS
+        shell: bash
+        run: |
+          set -euo pipefail
+          git lfs install --local
+          git lfs pull --include="composeApp/src/desktopMain/native/windows/runtime/**" --exclude=""
+
+          runtime_dir="composeApp/src/desktopMain/native/windows/runtime"
+          libmpv="${runtime_dir}/libmpv-2.dll"
+          engine="composeApp/src/desktopMain/native/windows/engine/nuvio_engine.dll"
+          for required in "${libmpv}" "${engine}"; do
+            if [[ ! -f "${required}" ]]; then
+              echo "Missing Windows runtime input: ${required}" >&2
+              exit 1
+            fi
+          done
+          if head -c 40 "${libmpv}" | grep -q "version https://git-lfs"; then
+            echo "libmpv-2.dll is still a Git LFS pointer." >&2
+            exit 1
+          fi
+          libmpv_size="$(wc -c < "${libmpv}")"
+          if (( libmpv_size < 1000000 )); then
+            echo "The Windows libmpv runtime was not materialized (${libmpv_size} bytes)." >&2
+            exit 1
+          fi
+          echo "Materialized Windows libmpv runtime: ${libmpv_size} bytes."
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Install WebView2 SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 `
+            -Version $env:WEBVIEW2_VERSION `
+            -OutputDirectory "$env:RUNNER_TEMP\nuget" `
+            -DirectDownload `
+            -NonInteractive `
+            -NoCache
+
+          $webView2Root = Join-Path $env:RUNNER_TEMP "nuget\Microsoft.Web.WebView2.$env:WEBVIEW2_VERSION"
+          $loaderLibrary = Join-Path $webView2Root "build\native\x64\WebView2Loader.dll.lib"
+          if (-not (Test-Path -LiteralPath $loaderLibrary)) {
+            throw "WebView2Loader.dll.lib was not found at $loaderLibrary"
+          }
+          "WEBVIEW2_ROOT=$webView2Root" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build release MSI
+        shell: pwsh
+        run: |
+          & .\gradlew.bat `
+            :composeApp:packageReleaseMsi `
+            "-Pnuvio.webview2.dir=$env:WEBVIEW2_ROOT" `
+            '-Pcompose.desktop.packaging.checkJdkVendor=false' `
+            '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' `
+            '-Pkotlin.daemon.jvmargs=-Xmx2048M' `
+            '--no-configuration-cache' `
+            '--no-daemon' `
+            '--max-workers=2' `
+            '--stacktrace' 2>&1 | Tee-Object -FilePath build.log
+          $gradleExitCode = $LASTEXITCODE
+          if ($gradleExitCode -ne 0) {
+            Get-Content -LiteralPath build.log -Tail 200
+            exit $gradleExitCode
+          }
+
+      - name: Verify MSI
+        shell: pwsh
+        run: |
+          $msiRelativePath = "composeApp\build\compose\release-msis\Nuvio-Windows-x64-$env:DESKTOP_VERSION.msi"
+          if (-not (Test-Path -LiteralPath $msiRelativePath)) {
+            Get-ChildItem -LiteralPath "composeApp\build\compose\release-msis" -ErrorAction SilentlyContinue |
+              Format-Table Name, Length
+            throw "Expected MSI was not produced: $msiRelativePath"
+          }
+          $msi = Get-Item -LiteralPath $msiRelativePath
+          if ($msi.Length -lt 10MB) {
+            throw "MSI is unexpectedly small ($($msi.Length) bytes): $($msi.FullName)"
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $msi.FullName
+          if ($signature.Status -eq [System.Management.Automation.SignatureStatus]::Valid) {
+            throw "Expected an unsigned test MSI, but a valid Authenticode signature was found."
+          }
+          $hash = (Get-FileHash -LiteralPath $msi.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($msi.Name)" | Set-Content -LiteralPath "$($msi.FullName).sha256" -Encoding ascii -NoNewline
+          Get-Item -LiteralPath $msi.FullName | Format-List Name, Length, LastWriteTime
+          Write-Output "MSI_SHA256=$hash"
+          Write-Output "MSI_SIGNATURE_STATUS=$($signature.Status)"
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v7
+        with:
+          name: iptv-desktop-${{ github.sha }}-windows-x64-msi
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+          path: |
+            composeApp/build/compose/release-msis/Nuvio-Windows-x64-${{ needs.prepare.outputs.version }}.msi
+            composeApp/build/compose/release-msis/Nuvio-Windows-x64-${{ needs.prepare.outputs.version }}.msi.sha256
+
+      # Test execution stays on Linux; this only proves the desktop test sources
+      # compile on Windows.
+      - name: Compile desktop test sources
+        shell: pwsh
+        run: |
+          & .\gradlew.bat `
+            :composeApp:compileTestKotlinDesktop `
+            "-Pnuvio.webview2.dir=$env:WEBVIEW2_ROOT" `
+            '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' `
+            '-Pkotlin.daemon.jvmargs=-Xmx2048M' `
+            '--no-configuration-cache' `
+            '--no-daemon' `
+            '--max-workers=2' `
+            '--stacktrace' 2>&1 | Tee-Object -FilePath test-compile.log
+          $gradleExitCode = $LASTEXITCODE
+          if ($gradleExitCode -ne 0) {
+            Get-Content -LiteralPath test-compile.log -Tail 200
+            exit $gradleExitCode
+          }
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: iptv-desktop-${{ github.sha }}-windows-x64-logs
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            build.log
+            test-compile.log
+            composeApp/build/reports/**
+            composeApp/build/test-results/**
+
+      - name: Write unsigned build summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          msi="composeApp/build/compose/release-msis/Nuvio-Windows-x64-${DESKTOP_VERSION}.msi"
+          {
+            echo "## Unsigned IPTV desktop test build - Windows x64"
+            echo
+            echo "**Not a release.** No code signing, notarization, publishing, tag, or GitHub release."
+            echo "No production secrets were used and \`local.properties\` was empty."
+            echo "Desktop test sources are compiled on this runner; the focused test suite runs on Linux only."
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Status | ${JOB_STATUS} |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Desktop version | \`${DESKTOP_VERSION}\` |"
+            echo "| Runner | \`${RUNNER_OS}\` |"
+            echo "| Artifact | \`iptv-desktop-${GITHUB_SHA}-windows-x64-msi\` |"
+            echo "| Installer | \`Nuvio-Windows-x64-${DESKTOP_VERSION}.msi\` |"
+            if [[ -f "${msi}" ]]; then
+              echo "| Size | $(wc -c < "${msi}") bytes |"
+            fi
+            echo
+            echo "Installers are unsigned test builds: Windows SmartScreen will warn."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  linux:
+    name: Linux x64 DEB
+    needs: prepare
+    if: github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'linux'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      DESKTOP_VERSION: ${{ needs.prepare.outputs.version }}
+      SENTRY_AUTH_TOKEN: ''
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Prepare empty local.properties
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > local.properties
+          if [[ -s local.properties ]]; then
+            echo "local.properties must stay empty for this build." >&2
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*(NUVIO_|TRAKT_|MDBLIST_|SIMKL_|SENTRY_|TMDB_)' local.properties; then
+            echo "local.properties must not contain service configuration or credentials." >&2
+            exit 1
+          fi
+          echo "local.properties is empty: no credentials or service configuration are bundled."
+
+      - name: Validate Linux native inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          engine="composeApp/src/desktopMain/native/linux/engine/libnuvio_engine.so"
+          bridge="composeApp/src/desktopMain/native/linux/player_bridge.cpp"
+          for required in "${engine}" "${bridge}"; do
+            if [[ ! -f "${required}" ]]; then
+              echo "Missing Linux native input: ${required}" >&2
+              exit 1
+            fi
+          done
+          engine_size="$(wc -c < "${engine}")"
+          if (( engine_size < 1000000 )); then
+            echo "The bundled Linux engine looks truncated (${engine_size} bytes)." >&2
+            exit 1
+          fi
+          echo "Linux native inputs present (libnuvio_engine.so ${engine_size} bytes)."
+
+      - name: Install Linux DEB build dependencies
+        shell: bash
+        run: |
+          bash ./scripts/linux/install-desktop-build-dependencies.sh fakeroot
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Run focused desktop IPTV and player policy tests
+        if: github.event_name == 'push' || inputs.run_focused_tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            :composeApp:desktopTest \
+            --tests 'com.nuvio.app.features.livetv.M3uParserTest' \
+            --tests 'com.nuvio.app.features.livetv.XmltvParserTest' \
+            --tests 'com.nuvio.app.features.livetv.LiveTvUrlsTest' \
+            --tests 'com.nuvio.app.features.livetv.LiveTvBrowseGroupTest' \
+            --tests 'com.nuvio.app.features.livetv.LiveTvUiSupportTest' \
+            --tests 'com.nuvio.app.features.livetv.LiveTvGroupPreferencesTest' \
+            --tests 'com.nuvio.app.features.livetv.EncryptedLiveTvSourceStoreTest' \
+            --tests 'com.nuvio.app.features.livetv.LiveTvRepositoryTest' \
+            --tests 'com.nuvio.app.features.player.PlayerLivePlaybackPolicyTest' \
+            --tests 'com.nuvio.app.features.player.PlaybackMatchTextTest' \
+            --tests 'com.nuvio.app.features.player.PlayerP2pConsentPolicyTest' \
+            '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -Pkotlin.daemon.jvmargs=-Xmx2048M \
+            --no-configuration-cache \
+            --no-daemon \
+            --max-workers=2 \
+            --stacktrace 2>&1 | tee test.log
+
+      - name: Build release DEB
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            :composeApp:packageReleaseDeb \
+            -Pcompose.desktop.packaging.checkJdkVendor=false \
+            '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -Pkotlin.daemon.jvmargs=-Xmx2048M \
+            --no-configuration-cache \
+            --no-daemon \
+            --max-workers=2 \
+            --stacktrace 2>&1 | tee build.log
+
+      - name: Verify DEB
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb_dir="composeApp/build/compose/binaries/main-release/deb"
+          if [[ ! -d "${deb_dir}" ]]; then
+            echo "Expected DEB output directory at ${deb_dir}." >&2
+            find composeApp/build/compose -maxdepth 8 2>/dev/null | head -n 200 >&2
+            exit 1
+          fi
+          mapfile -t debs < <(find "${deb_dir}" -maxdepth 1 -type f -name '*.deb' | sort)
+          if [[ "${#debs[@]}" -ne 1 ]]; then
+            echo "Expected exactly one .deb in ${deb_dir}, found ${#debs[@]}." >&2
+            ls -la "${deb_dir}" >&2 || true
+            exit 1
+          fi
+
+          deb="Nuvio-Linux-x86_64-${DESKTOP_VERSION}.deb"
+          cp "${debs[0]}" "${deb}"
+          bash ./scripts/linux/verify-linux-deb.sh "${deb}"
+
+          architecture="$(dpkg-deb -f "${deb}" Architecture)"
+          if [[ "${architecture}" != "amd64" ]]; then
+            echo "Unexpected DEB architecture: ${architecture}" >&2
+            exit 1
+          fi
+          sha256sum "${deb}" > "${deb}.sha256"
+          ls -lh "${deb}"
+          cat "${deb}.sha256"
+
+      - name: Upload DEB
+        uses: actions/upload-artifact@v7
+        with:
+          name: iptv-desktop-${{ github.sha }}-linux-x64-deb
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+          path: |
+            Nuvio-Linux-x86_64-${{ needs.prepare.outputs.version }}.deb
+            Nuvio-Linux-x86_64-${{ needs.prepare.outputs.version }}.deb.sha256
+
+      - name: Upload build logs and test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: iptv-desktop-${{ github.sha }}-linux-x64-logs
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            build.log
+            test.log
+            composeApp/build/reports/tests/desktopTest/**
+            composeApp/build/test-results/desktopTest/**
+
+      - name: Write unsigned build summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+          TESTS_REQUESTED: ${{ github.event_name == 'push' || inputs.run_focused_tests }}
+        run: |
+          set -euo pipefail
+          deb="Nuvio-Linux-x86_64-${DESKTOP_VERSION}.deb"
+          {
+            echo "## Unsigned IPTV desktop test build - Linux x64"
+            echo
+            echo "**Not a release.** No signing, publishing, tag, or GitHub release."
+            echo "No production secrets were used and \`local.properties\` was empty."
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Status | ${JOB_STATUS} |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Desktop version | \`${DESKTOP_VERSION}\` |"
+            echo "| Runner | \`${RUNNER_OS}\` |"
+            echo "| Focused IPTV/player tests | ${TESTS_REQUESTED} |"
+            echo "| Artifact | \`iptv-desktop-${GITHUB_SHA}-linux-x64-deb\` |"
+            echo "| Installer | \`${deb}\` |"
+            if [[ -f "${deb}" ]]; then
+              echo "| Size | $(wc -c < "${deb}") bytes |"
+              echo "| SHA256 | \`$(sha256sum "${deb}" | cut -d' ' -f1)\` |"
+            fi
+            echo
+            echo "Installers are unsigned test builds for local use only."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  macos:
+    name: macOS ${{ matrix.arch }} DMG
+    needs: prepare
+    if: github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'macos'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            java_arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+            java_arch: x64
+    env:
+      DESKTOP_VERSION: ${{ needs.prepare.outputs.version }}
+      MACOS_ARCH: ${{ matrix.arch }}
+      # Explicitly blank: this build is unsigned and not notarized.
+      NUVIO_MACOS_SIGNING_IDENTITY: ''
+      NUVIO_MACOS_NOTARY_APPLE_ID: ''
+      NUVIO_MACOS_NOTARY_TEAM_ID: ''
+      NUVIO_MACOS_NOTARY_PASSWORD: ''
+      NUVIO_MACOS_NOTARY_KEYCHAIN_PROFILE: ''
+      NUVIO_MACOS_NOTARY_KEYCHAIN_PATH: ''
+      SENTRY_AUTH_TOKEN: ''
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Prepare empty local.properties
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > local.properties
+          if [[ -s local.properties ]]; then
+            echo "local.properties must stay empty for this build." >&2
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*(NUVIO_|TRAKT_|MDBLIST_|SIMKL_|SENTRY_|TMDB_)' local.properties; then
+            echo "local.properties must not contain service configuration or credentials." >&2
+            exit 1
+          fi
+          echo "local.properties is empty: no credentials or service configuration are bundled."
+
+      - name: Materialize ${{ matrix.arch }} runtime from Git LFS
+        shell: bash
+        run: |
+          set -euo pipefail
+          git lfs install --local
+          runtime_dir="composeApp/src/desktopMain/native/macos/runtime/${MACOS_ARCH}"
+          git lfs pull --include="${runtime_dir}/**" --exclude=""
+
+          libmpv="${runtime_dir}/libmpv.2.dylib"
+          engine="composeApp/src/desktopMain/native/macos/engine/libnuvio_engine.dylib"
+          headers="composeApp/src/desktopMain/native/macos/include/mpv/client.h"
+          for required in "${libmpv}" "${engine}" "${headers}"; do
+            if [[ ! -f "${required}" ]]; then
+              echo "Missing macOS runtime input: ${required}" >&2
+              exit 1
+            fi
+          done
+          if head -c 40 "${libmpv}" | grep -q "version https://git-lfs"; then
+            echo "libmpv.2.dylib is still a Git LFS pointer." >&2
+            exit 1
+          fi
+          libmpv_size="$(wc -c < "${libmpv}")"
+          if (( libmpv_size < 1000000 )); then
+            echo "The ${MACOS_ARCH} libmpv runtime was not materialized (${libmpv_size} bytes)." >&2
+            exit 1
+          fi
+          dylib_count="$(find "${runtime_dir}" -maxdepth 1 -type f -name '*.dylib' | wc -l | tr -d ' ')"
+          if (( dylib_count < 20 )); then
+            echo "Only ${dylib_count} ${MACOS_ARCH} dylibs were materialized from Git LFS." >&2
+            exit 1
+          fi
+          echo "Materialized ${MACOS_ARCH} macOS runtime: ${dylib_count} dylibs, libmpv ${libmpv_size} bytes."
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+          architecture: ${{ matrix.java_arch }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build unsigned release DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            :composeApp:packageReleaseDmg \
+            "-Pnuvio.macos.arch=${MACOS_ARCH}" \
+            -Pcompose.desktop.packaging.checkJdkVendor=false \
+            '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -Pkotlin.daemon.jvmargs=-Xmx2048M \
+            --no-configuration-cache \
+            --no-daemon \
+            --max-workers=2 \
+            --stacktrace 2>&1 | tee build.log
+
+      - name: Verify unsigned DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg="composeApp/build/compose/release-dmgs/Nuvio-macOS-${MACOS_ARCH}-${DESKTOP_VERSION}.dmg"
+          if [[ ! -f "${dmg}" ]]; then
+            echo "Expected DMG was not produced: ${dmg}" >&2
+            find composeApp/build/compose -maxdepth 6 2>/dev/null | head -n 200 >&2
+            exit 1
+          fi
+          dmg_size="$(wc -c < "${dmg}")"
+          if (( dmg_size < 10485760 )); then
+            echo "DMG is unexpectedly small (${dmg_size} bytes): ${dmg}" >&2
+            exit 1
+          fi
+          if codesign --display "${dmg}" >/dev/null 2>&1; then
+            echo "Expected an unsigned DMG, but a code signature was found: ${dmg}" >&2
+            exit 1
+          fi
+          hdiutil verify "${dmg}"
+          shasum -a 256 "${dmg}" > "${dmg}.sha256"
+          ls -lh "${dmg}"
+          cat "${dmg}.sha256"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: iptv-desktop-${{ github.sha }}-macos-${{ matrix.arch }}-dmg
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+          path: |
+            composeApp/build/compose/release-dmgs/Nuvio-macOS-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}.dmg
+            composeApp/build/compose/release-dmgs/Nuvio-macOS-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}.dmg.sha256
+
+      # Test execution stays on Linux; this only proves the desktop test sources
+      # compile on macOS for this architecture.
+      - name: Compile desktop test sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            :composeApp:compileTestKotlinDesktop \
+            '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -Pkotlin.daemon.jvmargs=-Xmx2048M \
+            --no-configuration-cache \
+            --no-daemon \
+            --max-workers=2 \
+            --stacktrace 2>&1 | tee test-compile.log
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: iptv-desktop-${{ github.sha }}-macos-${{ matrix.arch }}-logs
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            build.log
+            test-compile.log
+            composeApp/build/reports/**
+
+      - name: Write unsigned build summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          dmg="composeApp/build/compose/release-dmgs/Nuvio-macOS-${MACOS_ARCH}-${DESKTOP_VERSION}.dmg"
+          {
+            echo "## Unsigned IPTV desktop test build - macOS ${MACOS_ARCH}"
+            echo
+            echo "**Not a release.** No code signing, notarization, publishing, tag, or GitHub release."
+            echo "Signing and notarization inputs were left blank; \`local.properties\` was empty."
+            echo "Desktop test sources are compiled on this runner; the focused test suite runs on Linux only."
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Status | ${JOB_STATUS} |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Desktop version | \`${DESKTOP_VERSION}\` |"
+            echo "| Runner | \`${RUNNER_OS}\` / \`${MACOS_ARCH}\` |"
+            echo "| Artifact | \`iptv-desktop-${GITHUB_SHA}-macos-${MACOS_ARCH}-dmg\` |"
+            echo "| Installer | \`Nuvio-macOS-${MACOS_ARCH}-${DESKTOP_VERSION}.dmg\` |"
+            if [[ -f "${dmg}" ]]; then
+              echo "| Size | $(wc -c < "${dmg}") bytes |"
+              echo "| SHA256 | \`$(shasum -a 256 "${dmg}" | cut -d' ' -f1)\` |"
+            fi
+            echo
+            echo "Installers are unsigned test builds: macOS Gatekeeper will block them until manually allowed."
+          } >> "${GITHUB_STEP_SUMMARY}"
