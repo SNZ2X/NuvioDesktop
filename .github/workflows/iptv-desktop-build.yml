@@ -36,6 +36,8 @@ on:
         type: boolean
         default: true
 
+# Share one 5 GiB JVM between Gradle and Kotlin instead of constraining the
+# Kotlin compiler to 2 GiB. One worker limits peak memory on 7 GiB Apple runners.
 permissions:
   contents: read
 
@@ -170,11 +172,11 @@ jobs:
             :composeApp:packageReleaseMsi `
             "-Pnuvio.webview2.dir=$env:WEBVIEW2_ROOT" `
             '-Pcompose.desktop.packaging.checkJdkVendor=false' `
-            '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' `
-            '-Pkotlin.daemon.jvmargs=-Xmx2048M' `
+            '-Dorg.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' `
+            '-Pkotlin.compiler.execution.strategy=in-process' `
             '--no-configuration-cache' `
             '--no-daemon' `
-            '--max-workers=2' `
+            '--max-workers=1' `
             '--stacktrace' 2>&1 | Tee-Object -FilePath build.log
           $gradleExitCode = $LASTEXITCODE
           if ($gradleExitCode -ne 0) {
@@ -224,11 +226,11 @@ jobs:
           & .\gradlew.bat `
             :composeApp:compileTestKotlinDesktop `
             "-Pnuvio.webview2.dir=$env:WEBVIEW2_ROOT" `
-            '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' `
-            '-Pkotlin.daemon.jvmargs=-Xmx2048M' `
+            '-Dorg.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' `
+            '-Pkotlin.compiler.execution.strategy=in-process' `
             '--no-configuration-cache' `
             '--no-daemon' `
-            '--max-workers=2' `
+            '--max-workers=1' `
             '--stacktrace' 2>&1 | Tee-Object -FilePath test-compile.log
           $gradleExitCode = $LASTEXITCODE
           if ($gradleExitCode -ne 0) {
@@ -361,11 +363,11 @@ jobs:
             --tests 'com.nuvio.app.features.player.PlayerLivePlaybackPolicyTest' \
             --tests 'com.nuvio.app.features.player.PlaybackMatchTextTest' \
             --tests 'com.nuvio.app.features.player.PlayerP2pConsentPolicyTest' \
-            '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
-            -Pkotlin.daemon.jvmargs=-Xmx2048M \
+            '-Dorg.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process \
             --no-configuration-cache \
             --no-daemon \
-            --max-workers=2 \
+            --max-workers=1 \
             --stacktrace 2>&1 | tee test.log
 
       - name: Build release DEB
@@ -375,11 +377,11 @@ jobs:
           ./gradlew \
             :composeApp:packageReleaseDeb \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
-            '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
-            -Pkotlin.daemon.jvmargs=-Xmx2048M \
+            '-Dorg.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process \
             --no-configuration-cache \
             --no-daemon \
-            --max-workers=2 \
+            --max-workers=1 \
             --stacktrace 2>&1 | tee build.log
 
       - name: Verify DEB
@@ -568,11 +570,11 @@ jobs:
             :composeApp:packageReleaseDmg \
             "-Pnuvio.macos.arch=${MACOS_ARCH}" \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
-            '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
-            -Pkotlin.daemon.jvmargs=-Xmx2048M \
+            '-Dorg.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process \
             --no-configuration-cache \
             --no-daemon \
-            --max-workers=2 \
+            --max-workers=1 \
             --stacktrace 2>&1 | tee build.log
 
       - name: Verify unsigned DMG
@@ -618,11 +620,11 @@ jobs:
           set -euo pipefail
           ./gradlew \
             :composeApp:compileTestKotlinDesktop \
-            '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
-            -Pkotlin.daemon.jvmargs=-Xmx2048M \
+            '-Dorg.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process \
             --no-configuration-cache \
             --no-daemon \
-            --max-workers=2 \
+            --max-workers=1 \
             --stacktrace 2>&1 | tee test-compile.log
 
       - name: Upload build logs
